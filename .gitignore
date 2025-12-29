@@ -1,7 +1,42 @@
-/config/
-/config.yaml
-/data
+# Binaries
 /GoBlog
-/tmp_assets
-/queues
-/static
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# Project specific
+/config/
+/data/
+/config.yaml
+/tmp_assets/
+/queues/
+/static/

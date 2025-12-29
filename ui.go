@@ -86,6 +86,13 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	}
 	// Header
 	hb.WriteElementOpen("header")
+	// Profile Image
+	if a.hasProfileImage() {
+		hb.WriteElementOpen("a", "href", rd.Blog.getRelativePath("/"), "class", "profile-image-link")
+		hb.WriteElementOpen("img", "src", a.profileImagePath(profileImageFormatJPEG, 80, 0), "alt", renderedBlogTitle, "width", "80", "height", "80")
+		hb.WriteElementClose("img")
+		hb.WriteElementClose("a")
+	}
 	// Blog title
 	hb.WriteElementOpen("h1")
 	hb.WriteElementOpen("a", "href", rd.Blog.getRelativePath("/"), "rel", "home", "title", renderedBlogTitle, "translate", "no")
