@@ -1562,6 +1562,16 @@ type settingsRenderData struct {
 	addLikeContext        bool
 	userNick              string
 	userName              string
+	passkeys              []*passkey
+	appPasswords          []*appPassword
+	hasTOTP               bool
+	hasDBPassword         bool
+	newTotpSecret         string
+}
+
+type appPasswordCreatedRenderData struct {
+	name  string
+	token string
 }
 
 func (a *goBlog) renderSettings(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
@@ -1608,6 +1618,9 @@ func (a *goBlog) renderSettings(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 
 			// User settings
 			a.renderUserSettings(hb, rd, srd)
+
+			// Security settings (Password, TOTP, Passkeys, App Passwords)
+			a.renderSecuritySettings(hb, rd, srd)
 
 			// Post sections
 			a.renderPostSectionSettings(hb, rd, srd)
