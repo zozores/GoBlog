@@ -17,19 +17,22 @@ import (
 
 const asRequestKey contextKey = "asRequest"
 
-func (a *goBlog) checkActivityStreamsRequest(next http.Handler) http.Handler {
-	if len(a.asCheckMediaTypes) == 0 {
-		a.asCheckMediaTypes = []ct.MediaType{
-			ct.NewMediaType(contenttype.HTML),
-			ct.NewMediaType(contenttype.AS),
-			ct.NewMediaType(contenttype.LDJSON),
-			ct.NewMediaType(contenttype.LDJSON + "; profile=\"https://www.w3.org/ns/activitystreams\""),
-		}
+var asCheckMediaTypes []ct.MediaType
+
+func init() {
+	asCheckMediaTypes = []ct.MediaType{
+		ct.NewMediaType(contenttype.HTML),
+		ct.NewMediaType(contenttype.AS),
+		ct.NewMediaType(contenttype.LDJSON),
+		ct.NewMediaType(contenttype.LDJSON + "; profile=\"https://www.w3.org/ns/activitystreams\""),
 	}
+}
+
+func (a *goBlog) checkActivityStreamsRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if ap := a.cfg.ActivityPub; ap != nil && ap.Enabled && !a.isPrivate() {
-			// Check if accepted media type is not HTML
-			if mt, _, err := ct.GetAcceptableMediaType(r, a.asCheckMediaTypes); err == nil && mt.String() != a.asCheckMediaTypes[0].String() {
+		if a.apEnabled() {
+			alreadyAsRequest, ok := r.Context().Value(asRequestKey).(bool)
+			if (ok && alreadyAsRequest) || a.isActivityStreamsRequest(r) {
 				next.ServeHTTP(rw, r.WithContext(context.WithValue(r.Context(), asRequestKey, true)))
 				return
 			}
@@ -38,22 +41,30 @@ func (a *goBlog) checkActivityStreamsRequest(next http.Handler) http.Handler {
 	})
 }
 
+func (_ *goBlog) isActivityStreamsRequest(r *http.Request) bool {
+	if mt, _, err := ct.GetAcceptableMediaType(r, asCheckMediaTypes); err == nil && mt.String() != asCheckMediaTypes[0].String() {
+		return true
+	}
+	return false
+}
+
 func (a *goBlog) serveActivityStreamsPost(w http.ResponseWriter, r *http.Request, status int, p *post) {
 	a.serveAPItem(w, r, status, a.toAPNote(p))
 }
 
 func (a *goBlog) toAPNote(p *post) *ap.Note {
+	bc := a.getBlogFromPost(p)
 	// Create a Note object
 	note := ap.ObjectNew(ap.NoteType)
 	note.ID = a.activityPubId(p)
 	note.URL = ap.IRI(a.fullPostURL(p))
-	note.AttributedTo = a.apAPIri(a.getBlogFromPost(p))
+	note.AttributedTo = a.apAPIri(bc)
 	// Audience
 	switch p.Visibility {
 	case visibilityPublic:
-		note.To.Append(ap.PublicNS, a.apGetFollowersCollectionId(p.Blog, a.getBlogFromPost(p)))
+		note.To.Append(ap.PublicNS, a.apGetFollowersCollectionId(p.Blog))
 	case visibilityUnlisted:
-		note.To.Append(a.apGetFollowersCollectionId(p.Blog, a.getBlogFromPost(p)))
+		note.To.Append(a.apGetFollowersCollectionId(p.Blog))
 		note.CC.Append(ap.PublicNS)
 	}
 	for _, m := range p.Parameters[activityPubMentionsParameter] {
@@ -62,11 +73,11 @@ func (a *goBlog) toAPNote(p *post) *ap.Note {
 	// Name and Type
 	if title := p.RenderedTitle; title != "" {
 		note.Type = ap.ArticleType
-		note.Name = ap.DefaultNaturalLanguage(title)
+		note.Name = ap.NaturalLanguageValues{{Lang: bc.Lang, Value: title}}
 	}
 	// Content
 	note.MediaType = ap.MimeType(contenttype.HTML)
-	note.Content = ap.DefaultNaturalLanguage(a.postHtml(&postHtmlOptions{p: p, absolute: true, activityPub: true}))
+	note.Content = ap.NaturalLanguageValues{{Lang: bc.Lang, Value: a.postHtml(&postHtmlOptions{p: p, absolute: true, activityPub: true})}}
 	// Attachments
 	if images := p.Parameters[a.cfg.Micropub.PhotoParam]; len(images) > 0 {
 		var attachments ap.ItemCollection
@@ -81,20 +92,22 @@ func (a *goBlog) toAPNote(p *post) *ap.Note {
 	for _, tagTax := range a.cfg.ActivityPub.TagsTaxonomies {
 		for _, tag := range p.Parameters[tagTax] {
 			apTag := &ap.Object{Type: "Hashtag"}
-			apTag.Name = ap.DefaultNaturalLanguage(tag)
+			apTag.Name = ap.NaturalLanguageValues{{Lang: bc.Lang, Value: tag}}
 			apTag.URL = ap.IRI(a.getFullAddress(a.getRelativePath(p.Blog, fmt.Sprintf("/%s/%s", tagTax, urlize(tag)))))
 			note.Tag.Append(apTag)
 		}
 	}
 	// Mentions
 	for _, mention := range p.Parameters[activityPubMentionsParameter] {
-		apMention := ap.MentionNew(ap.IRI(mention))
-		apMention.URL = ap.IRI(mention)
+		apMention := ap.ObjectNew(ap.MentionType)
+		apMention.ID = ap.IRI(mention)
+		apMention.Href = ap.IRI(mention)
 		note.Tag.Append(apMention)
 	}
 	if replyLinkActor := p.firstParameter(activityPubReplyActorParameter); replyLinkActor != "" {
-		apMention := ap.MentionNew(ap.IRI(replyLinkActor))
-		apMention.URL = ap.IRI(replyLinkActor)
+		apMention := ap.ObjectNew(ap.MentionType)
+		apMention.ID = ap.IRI(replyLinkActor)
+		apMention.Href = ap.IRI(replyLinkActor)
 		note.Tag.Append(apMention)
 	}
 	// Dates
@@ -110,7 +123,12 @@ func (a *goBlog) toAPNote(p *post) *ap.Note {
 	}
 	// Reply
 	if replyLink := p.firstParameter(a.cfg.Micropub.ReplyParam); replyLink != "" {
-		note.InReplyTo = ap.IRI(replyLink)
+		if replyObject := p.firstParameter(activityPubReplyObjectParameter); replyObject != "" {
+			note.InReplyTo = ap.IRI(replyObject)
+		} else {
+			// Fallback to reply link if reply object is not available
+			note.InReplyTo = ap.IRI(replyLink)
+		}
 	}
 	return note
 }
@@ -125,23 +143,34 @@ func (a *goBlog) activityPubId(p *post) ap.IRI {
 	return ap.IRI(fu)
 }
 
-func (a *goBlog) toApPerson(blog string) *ap.Person {
+func (a *goBlog) toApPerson(blog string, altAddress string) *ap.Actor {
 	b := a.cfg.Blogs[blog]
 
-	apIri := a.apAPIri(b)
+	var iri string
+	if altAddress != "" {
+		iri = a.apIriForAddress(b, altAddress)
+	} else {
+		iri = a.apIri(b)
+	}
+
+	apIri := ap.IRI(iri)
 
 	apBlog := ap.PersonNew(apIri)
 	apBlog.URL = apIri
 
-	apBlog.Name.Set(ap.DefaultLang, string(ap.Content(a.renderMdTitle(b.Title))))
-	apBlog.Summary.Set(ap.DefaultLang, string(ap.Content(b.Description)))
-	apBlog.PreferredUsername.Set(ap.DefaultLang, string(ap.Content(blog)))
+	apBlog.Name = ap.NaturalLanguageValues{{Lang: b.Lang, Value: a.renderMdTitle(b.Title)}}
+	apBlog.Summary = ap.NaturalLanguageValues{{Lang: b.Lang, Value: b.Description}}
+	apBlog.PreferredUsername = ap.NaturalLanguageValues{{Lang: b.Lang, Value: blog}}
 
-	apBlog.Inbox = ap.IRI(a.getFullAddress("/activitypub/inbox/" + blog))
-	apBlog.Followers = ap.IRI(a.getFullAddress("/activitypub/followers/" + blog))
+	if altAddress != "" {
+		apBlog.Inbox = ap.IRI(getFullAddressStatic(altAddress, apInboxPathTemplate+blog))
+	} else {
+		apBlog.Inbox = ap.IRI(a.getFullAddress(apInboxPathTemplate + blog))
+	}
+	apBlog.Followers = a.apGetFollowersCollectionIdForAddress(blog, altAddress)
 
 	apBlog.PublicKey.Owner = apIri
-	apBlog.PublicKey.ID = ap.IRI(a.apIri(b) + "#main-key")
+	apBlog.PublicKey.ID = ap.IRI(iri + "#main-key")
 	apBlog.PublicKey.PublicKeyPem = string(pem.EncodeToMemory(&pem.Block{
 		Type:    "PUBLIC KEY",
 		Headers: nil,
@@ -164,11 +193,30 @@ func (a *goBlog) toApPerson(blog string) *ap.Person {
 		apBlog.AlsoKnownAs = append(apBlog.AlsoKnownAs, ap.IRI(aka))
 	}
 
+	if altAddress == "" {
+		// Add alternative addresses as alsoKnownAs
+		for _, altAddress := range a.cfg.Server.AltAddresses {
+			apBlog.AlsoKnownAs = append(apBlog.AlsoKnownAs, ap.IRI(a.apIriForAddress(b, altAddress)))
+		}
+	} else {
+		// Add main address as alsoKnownAs
+		apBlog.AlsoKnownAs = append(apBlog.AlsoKnownAs, a.apAPIri(b))
+	}
+
+	// Check if this blog has a movedTo target set (account migration)
+	if movedTo, err := a.getApMovedTo(blog); err == nil && movedTo != "" {
+		apBlog.MovedTo = ap.IRI(movedTo)
+	} else if altAddress != "" {
+		// If this is an alternative domain, set movedTo to point to the main domain
+		apBlog.MovedTo = a.apAPIri(b)
+	}
+
 	return apBlog
 }
 
 func (a *goBlog) serveActivityStreams(w http.ResponseWriter, r *http.Request, status int, blog string) {
-	a.serveAPItem(w, r, status, a.toApPerson(blog))
+	altAddress, _ := r.Context().Value(altAddressKey).(string)
+	a.serveAPItem(w, r, status, a.toApPerson(blog, altAddress))
 }
 
 func (a *goBlog) serveAPItem(w http.ResponseWriter, r *http.Request, status int, item any) {
@@ -184,11 +232,11 @@ func (a *goBlog) serveAPItem(w http.ResponseWriter, r *http.Request, status int,
 	_ = a.min.Get().Minify(contenttype.AS, w, bytes.NewReader(binary))
 }
 
-func apUsername(person *ap.Person) string {
-	preferredUsername := person.PreferredUsername.First().String()
-	u, err := url.Parse(person.GetLink().String())
+func apUsername(actor *ap.Actor) string {
+	preferredUsername := actor.PreferredUsername.First().String()
+	u, err := url.Parse(actor.GetLink().String())
 	if err != nil || u == nil || u.Host == "" || preferredUsername == "" {
-		return person.GetLink().String()
+		return actor.GetLink().String()
 	}
 	return fmt.Sprintf("@%s@%s", preferredUsername, u.Host)
 }

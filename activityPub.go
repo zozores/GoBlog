@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -15,16 +17,23 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"slices"
 	"time"
 
+	"code.superseriousbusiness.org/httpsig"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-fed/httpsig"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	ap "go.goblog.app/app/pkgs/activitypub"
 	"go.goblog.app/app/pkgs/bufferpool"
 	"go.goblog.app/app/pkgs/contenttype"
+)
+
+// ActivityPub path constants
+const (
+	activityPubBasePath     = "/activitypub"
+	apInboxPathTemplate     = activityPubBasePath + "/inbox/"     // + blog name
+	apFollowersPathTemplate = activityPubBasePath + "/followers/" // + blog name
 )
 
 func (a *goBlog) initActivityPub() error {
@@ -89,14 +98,14 @@ func (a *goBlog) initActivityPubBase() error {
 	if err != nil {
 		return err
 	}
-	// Init http client
-	a.apHttpClients = map[string]*http.Client{}
-	for blog, bc := range a.cfg.Blogs {
-		httpClient := cloneHttpClient(a.httpClient)
-		httpClient.Transport = a.newactivityPubSignRequestTransport(httpClient.Transport, string(a.apAPIri(bc)))
-		a.apHttpClients[blog] = httpClient
-	}
-	return nil
+	a.apSignerNoDigest, _, err = httpsig.NewSigner(
+		[]httpsig.Algorithm{httpsig.RSA_SHA256},
+		httpsig.DigestSha256,
+		[]string{httpsig.RequestTarget, "date", "host"},
+		httpsig.Signature,
+		0,
+	)
+	return err
 }
 
 func (a *goBlog) apEnabled() bool {
@@ -116,21 +125,39 @@ func (a *goBlog) prepareWebfinger() {
 	a.webfingerResources = map[string]*configBlog{}
 	a.webfingerAccts = map[string]string{}
 	for name, blog := range a.cfg.Blogs {
-		a.apUserHandle[name] = "@" + name + "@" + a.cfg.Server.publicHostname
-		acct := "acct:" + name + "@" + a.cfg.Server.publicHostname
+		a.apUserHandle[name] = "@" + name + "@" + a.cfg.Server.publicHost
+		acct := "acct:" + name + "@" + a.cfg.Server.publicHost
 		a.webfingerResources[acct] = blog
-		a.webfingerResources[a.apIri(blog)] = blog
-		a.webfingerAccts[a.apIri(blog)] = acct
+		iri := a.apIri(blog)
+		a.webfingerResources[iri] = blog
+		a.webfingerAccts[iri] = acct
+	}
+	// Also prepare webfinger for alternative domains
+	for _, altAddress := range a.cfg.Server.AltAddresses {
+		for name, blog := range a.cfg.Blogs {
+			acct := "acct:" + name + "@" + getHost(altAddress)
+			a.webfingerResources[acct] = blog
+			iri := a.apIriForAddress(blog, altAddress)
+			a.webfingerResources[iri] = blog
+			a.webfingerAccts[iri] = acct
+		}
 	}
 }
 
 func (a *goBlog) apHandleWebfinger(w http.ResponseWriter, r *http.Request) {
+	// Get blog
 	blog, ok := a.webfingerResources[r.URL.Query().Get("resource")]
 	if !ok {
 		a.serveError(w, r, "Resource not found", http.StatusNotFound)
 		return
 	}
 	apIri := a.apIri(blog)
+	// Check if it is an alternative host
+	altHostname, ok := r.Context().Value(altAddressKey).(string)
+	if ok && altHostname != "" {
+		// Alternative domain webfinger
+		apIri = a.apIriForAddress(blog, altHostname)
+	}
 	// Encode
 	pr, pw := io.Pipe()
 	go func() {
@@ -169,10 +196,10 @@ func (a *goBlog) apCheckMentions(p *post) {
 	mentions := []string{}
 	for _, link := range links {
 		act, err := a.apGetRemoteActor(p.Blog, ap.IRI(link))
-		if err != nil || act == nil || act.Type != ap.PersonType {
+		if err != nil || act == nil || !ap.IsActorType(act.Type) {
 			continue
 		}
-		mentions = append(mentions, link)
+		mentions = append(mentions, cmp.Or(string(act.GetLink()), link))
 	}
 	if p.Parameters == nil {
 		p.Parameters = map[string][]string{}
@@ -181,7 +208,10 @@ func (a *goBlog) apCheckMentions(p *post) {
 	_ = a.db.replacePostParam(p.Path, activityPubMentionsParameter, mentions)
 }
 
-const activityPubReplyActorParameter = "activitypubreplyactor"
+const (
+	activityPubReplyActorParameter  = "activitypubreplyactor"
+	activityPubReplyObjectParameter = "activitypubreplyobject"
+)
 
 func (a *goBlog) apCheckActivityPubReply(p *post) {
 	replyLink := a.replyLink(p)
@@ -189,19 +219,24 @@ func (a *goBlog) apCheckActivityPubReply(p *post) {
 		return
 	}
 	item, err := a.apLoadRemoteIRI(p.Blog, ap.IRI(replyLink))
-	if err != nil || item == nil || !ap.IsObject(item) {
+	if err != nil || item == nil || !item.IsObject() {
 		return
 	}
 	obj, err := ap.ToObject(item)
-	if err != nil || obj == nil || obj.GetLink() == "" || obj.AttributedTo == nil || obj.AttributedTo.GetLink() == "" {
+	if err != nil || obj == nil || obj.GetLink() == "" {
 		return
 	}
-	replyLinkActor := []string{obj.AttributedTo.GetLink().String()}
 	if p.Parameters == nil {
 		p.Parameters = map[string][]string{}
 	}
-	p.Parameters[activityPubReplyActorParameter] = replyLinkActor
-	_ = a.db.replacePostParam(p.Path, activityPubReplyActorParameter, replyLinkActor)
+	replyLinkObject := []string{obj.GetLink().String()}
+	p.Parameters[activityPubReplyObjectParameter] = replyLinkObject
+	_ = a.db.replacePostParam(p.Path, activityPubReplyObjectParameter, replyLinkObject)
+	if obj.AttributedTo != nil && obj.AttributedTo.GetLink() != "" {
+		replyLinkActor := []string{obj.AttributedTo.GetLink().String()}
+		p.Parameters[activityPubReplyActorParameter] = replyLinkActor
+		_ = a.db.replacePostParam(p.Path, activityPubReplyActorParameter, replyLinkActor)
+	}
 }
 
 func (a *goBlog) apHandleInbox(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +288,11 @@ func (a *goBlog) apHandleInbox(w http.ResponseWriter, r *http.Request) {
 	case ap.UndoType:
 		if activity.Object.IsObject() {
 			objectActivity, err := ap.ToActivity(activity.Object)
-			if err == nil && objectActivity.GetType() == ap.FollowType && objectActivity.Actor.GetLink() == activityActor {
+			if err == nil &&
+				objectActivity.GetType() == ap.FollowType &&
+				objectActivity.Actor.GetLink() == activityActor &&
+				objectActivity.Object.GetLink() == a.apAPIri(blog) {
+				a.info("Follower unfollowed", "blog", blogName, "actor", activityActor.String())
 				_ = a.db.apRemoveFollower(blogName, activityActor.String())
 			}
 		}
@@ -263,6 +302,7 @@ func (a *goBlog) apHandleInbox(w http.ResponseWriter, r *http.Request) {
 		}
 	case ap.DeleteType, ap.BlockType:
 		if activity.Object.GetLink() == activityActor {
+			a.info("Follower got deleted or blocked", "blog", blogName, "actor", activityActor.String(), "activity_type", activity.GetType())
 			_ = a.db.apRemoveFollower(blogName, activityActor.String())
 		} else {
 			// Check if comment exists
@@ -273,11 +313,11 @@ func (a *goBlog) apHandleInbox(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case ap.AnnounceType:
-		if announceTarget := activity.Object.GetLink().String(); announceTarget != "" && strings.HasPrefix(announceTarget, a.cfg.Server.PublicAddress) {
+		if announceTarget := activity.Object.GetLink().String(); announceTarget != "" && a.isLocalURL(announceTarget) {
 			a.sendNotification(fmt.Sprintf("%s announced %s", activityActor, announceTarget))
 		}
 	case ap.LikeType:
-		if likeTarget := activity.Object.GetLink().String(); likeTarget != "" && strings.HasPrefix(likeTarget, a.cfg.Server.PublicAddress) {
+		if likeTarget := activity.Object.GetLink().String(); likeTarget != "" && a.isLocalURL(likeTarget) {
 			a.sendNotification(fmt.Sprintf("%s liked %s", activityActor, likeTarget))
 		}
 	}
@@ -304,7 +344,7 @@ func (a *goBlog) apOnCreateUpdate(blog *configBlog, requestActor *ap.Actor, acti
 	content := object.Content.First().String()
 	// Handle reply
 	if inReplyTo := object.InReplyTo; inReplyTo != nil {
-		if replyTarget := inReplyTo.GetLink().String(); replyTarget != "" && strings.HasPrefix(replyTarget, a.cfg.Server.PublicAddress) {
+		if replyTarget := inReplyTo.GetLink().String(); replyTarget != "" && a.isLocalURL(replyTarget) {
 			if object.To.Contains(ap.PublicNS) || object.CC.Contains(ap.PublicNS) {
 				// Public reply - comment
 				_, _, _ = a.createComment(blog, replyTarget, content, actorName, actorLink, noteUri)
@@ -355,12 +395,29 @@ func (a *goBlog) apVerifySignature(r *http.Request, blog string) (*ap.Actor, err
 	if block == nil {
 		return nil, errors.New("public key invalid")
 	}
-	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	var pubKey any
+	switch block.Type {
+	case "RSA PUBLIC KEY":
+		pubKey, err = x509.ParsePKCS1PublicKey(block.Bytes)
+	default:
+		pubKey, err = x509.ParsePKIXPublicKey(block.Bytes)
+	}
 	if err != nil {
 		// Unable to parse public key
 		return nil, err
 	}
-	return actor, verifier.Verify(pubKey, httpsig.RSA_SHA256)
+	var algo httpsig.Algorithm
+	switch pubKey.(type) {
+	case *rsa.PublicKey:
+		algo = httpsig.RSA_SHA256
+	case *ecdsa.PublicKey:
+		algo = httpsig.ECDSA_SHA256
+	case ed25519.PublicKey:
+		algo = httpsig.ED25519
+	default:
+		return nil, errors.New("unsupported public key type")
+	}
+	return actor, verifier.Verify(pubKey, algo)
 }
 
 func handleWellKnownHostMeta(w http.ResponseWriter, r *http.Request) {
@@ -369,8 +426,17 @@ func handleWellKnownHostMeta(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, `<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0"><Link rel="lrdd" type="application/xrd+xml" template="https://`+r.Host+`/.well-known/webfinger?resource={uri}"/></XRD>`)
 }
 
-func (a *goBlog) apGetFollowersCollectionId(blogName string, blog *configBlog) ap.IRI {
-	return ap.IRI(a.apIri(blog) + "/activitypub/followers/" + blogName)
+func (a *goBlog) apGetFollowersCollectionId(blogName string) ap.IRI {
+	return a.apGetFollowersCollectionIdForAddress(blogName, "")
+}
+
+func (a *goBlog) apGetFollowersCollectionIdForAddress(blogName string, address string) ap.IRI {
+	path := apFollowersPathTemplate + blogName
+	if address == "" {
+		return ap.IRI(a.getFullAddress(path))
+	} else {
+		return ap.IRI(getFullAddressStatic(address, path))
+	}
 }
 
 func (a *goBlog) apShowFollowers(w http.ResponseWriter, r *http.Request) {
@@ -386,7 +452,7 @@ func (a *goBlog) apShowFollowers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if asRequest, ok := r.Context().Value(asRequestKey).(bool); ok && asRequest {
-		followersCollection := ap.CollectionNew(a.apGetFollowersCollectionId(blogName, blog))
+		followersCollection := ap.CollectionNew(a.apGetFollowersCollectionId(blogName))
 		for _, follower := range followers {
 			followersCollection.Items.Append(ap.IRI(follower.follower))
 		}
@@ -397,7 +463,7 @@ func (a *goBlog) apShowFollowers(w http.ResponseWriter, r *http.Request) {
 	a.render(w, r, a.renderActivityPubFollowers, &renderData{
 		BlogString: blogName,
 		Data: &activityPubFollowersRenderData{
-			apUser:    fmt.Sprintf("@%s@%s", blogName, a.cfg.Server.publicHostname),
+			apUser:    fmt.Sprintf("@%s@%s", blogName, a.cfg.Server.publicHost),
 			followers: followers,
 		},
 	})
@@ -461,7 +527,7 @@ func (db *database) apRemoveInbox(inbox string) error {
 
 func (a *goBlog) apPost(p *post) {
 	blogConfig := a.getBlogFromPost(p)
-	c := ap.CreateNew(a.apNewID(blogConfig), a.toAPNote(p))
+	c := ap.ActivityNew(ap.CreateType, a.apNewID(blogConfig), a.toAPNote(p))
 	c.Actor = a.apAPIri(blogConfig)
 	c.Published = time.Now()
 	a.apSendToAllFollowers(p.Blog, c, append(p.Parameters[activityPubMentionsParameter], p.firstParameter(activityPubReplyActorParameter))...)
@@ -469,7 +535,7 @@ func (a *goBlog) apPost(p *post) {
 
 func (a *goBlog) apUpdate(p *post) {
 	blogConfig := a.getBlogFromPost(p)
-	u := ap.UpdateNew(a.apNewID(blogConfig), a.toAPNote(p))
+	u := ap.ActivityNew(ap.UpdateType, a.apNewID(blogConfig), a.toAPNote(p))
 	u.Actor = a.apAPIri(blogConfig)
 	u.Published = time.Now()
 	a.apSendToAllFollowers(p.Blog, u, append(p.Parameters[activityPubMentionsParameter], p.firstParameter(activityPubReplyActorParameter))...)
@@ -477,7 +543,7 @@ func (a *goBlog) apUpdate(p *post) {
 
 func (a *goBlog) apDelete(p *post) {
 	blogConfig := a.getBlogFromPost(p)
-	d := ap.DeleteNew(a.apNewID(blogConfig), a.activityPubId(p))
+	d := ap.ActivityNew(ap.DeleteType, a.apNewID(blogConfig), a.activityPubId(p))
 	d.Actor = a.apAPIri(blogConfig)
 	d.Published = time.Now()
 	a.apSendToAllFollowers(p.Blog, d, append(p.Parameters[activityPubMentionsParameter], p.firstParameter(activityPubReplyActorParameter))...)
@@ -499,7 +565,7 @@ func (a *goBlog) apUndelete(p *post) {
 
 func (a *goBlog) apAccept(blogName string, blog *configBlog, follow *ap.Activity) {
 	newFollower := follow.Actor.GetLink()
-	a.info("AcitivyPub: New follow request from follower", "id", newFollower.String())
+	a.info("ActivityPub: New follow request from follower", "id", newFollower.String())
 	// Get remote actor
 	follower, err := a.apGetRemoteActor(blogName, newFollower)
 	if err != nil || follower == nil {
@@ -520,21 +586,25 @@ func (a *goBlog) apAccept(blogName string, blog *configBlog, follow *ap.Activity
 		return
 	}
 	// Send accept response to the new follower
-	accept := ap.AcceptNew(a.apNewID(blog), follow)
+	accept := ap.ActivityNew(ap.AcceptType, a.apNewID(blog), follow)
 	accept.To.Append(newFollower)
 	accept.Actor = a.apAPIri(blog)
 	_ = a.apQueueSendSigned(a.apIri(blog), inbox.String(), accept)
 	// Notification
-	a.sendNotification(fmt.Sprintf("%s (%s) started following %s", username, follower.GetLink().String(), a.apIri(blog)))
+	followerLink := follower.GetLink().String()
+	if follower.URL != nil && follower.URL.GetLink() != "" {
+		followerLink = follower.URL.GetLink().String()
+	}
+	a.sendNotification(fmt.Sprintf("%s (%s) started following %s", username, followerLink, a.apIri(blog)))
 }
 
 func (a *goBlog) apSendProfileUpdates() {
 	for blog, config := range a.cfg.Blogs {
-		person := a.toApPerson(blog)
-		update := ap.UpdateNew(a.apNewID(config), person)
+		person := a.toApPerson(blog, "")
+		update := ap.ActivityNew(ap.UpdateType, a.apNewID(config), person)
 		update.Actor = a.apAPIri(config)
 		update.Published = time.Now()
-		update.To.Append(ap.PublicNS, a.apGetFollowersCollectionId(blog, config))
+		update.To.Append(ap.PublicNS, a.apGetFollowersCollectionId(blog))
 		a.apSendToAllFollowers(blog, update)
 	}
 }
@@ -569,12 +639,19 @@ func (a *goBlog) apSendTo(blogIri string, activity *ap.Activity, inboxes ...stri
 	}
 }
 
-func (a *goBlog) apNewID(blog *configBlog) ap.ID {
-	return ap.ID(a.apIri(blog) + "#" + uuid.NewString())
+func (a *goBlog) apNewID(blog *configBlog) ap.IRI {
+	return ap.IRI(a.apIri(blog) + "#" + uuid.NewString())
 }
 
 func (a *goBlog) apIri(b *configBlog) string {
 	return a.getFullAddress(b.getRelativePath(""))
+}
+
+func (a *goBlog) apIriForAddress(b *configBlog, address string) string {
+	if address == "" {
+		return a.apIri(b)
+	}
+	return getFullAddressStatic(address, b.getRelativePath(""))
 }
 
 func (a *goBlog) apAPIri(b *configBlog) ap.IRI {
@@ -638,42 +715,164 @@ func (a *goBlog) signRequest(r *http.Request, blogIri string) error {
 	if host := r.Header.Get("Host"); host == "" {
 		r.Header.Set("Host", r.URL.Host)
 	}
-	bodyBuf := bytes.NewBufferString("")
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		a.apSignMutex.Lock()
+		defer a.apSignMutex.Unlock()
+		return a.apSignerNoDigest.SignRequest(a.apPrivateKey, blogIri+"#main-key", r, nil)
+	}
+	bodyBuf := bufferpool.Get()
+	defer bufferpool.Put(bodyBuf)
 	if r.Body != nil {
-		if _, err := io.Copy(bodyBuf, r.Body); err == nil {
-			r.Body = io.NopCloser(bodyBuf)
-		}
+		_, _ = io.Copy(bodyBuf, r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(bodyBuf.Bytes()))
 	}
 	a.apSignMutex.Lock()
 	defer a.apSignMutex.Unlock()
 	return a.apSigner.SignRequest(a.apPrivateKey, blogIri+"#main-key", r, bodyBuf.Bytes())
 }
 
-func (a *goBlog) apRefetchFollowers(blogName string) error {
+func (a *goBlog) apMoveFollowers(blogName string, targetAccount string) error {
+	// Check if blog exists
+	blog, ok := a.cfg.Blogs[blogName]
+	if !ok || blog == nil {
+		return fmt.Errorf("blog not found: %s", blogName)
+	}
+
+	// Fetch and validate the target account
+	targetActor, err := a.apGetRemoteActor(blogName, ap.IRI(targetAccount))
+	if err != nil || targetActor == nil {
+		return fmt.Errorf("failed to fetch target account %s: %w", targetAccount, err)
+	}
+
+	// Verify that the target account has the GoBlog account in alsoKnownAs
+	blogIri := a.apIri(blog)
+	hasAlias := false
+	for _, aka := range targetActor.AlsoKnownAs {
+		if aka.GetLink().String() == blogIri {
+			hasAlias = true
+			break
+		}
+	}
+	if !hasAlias {
+		return fmt.Errorf("target account %s does not have %s in alsoKnownAs - add it before moving followers", targetAccount, blogIri)
+	}
+
+	// Get all followers
 	followers, err := a.db.apGetAllFollowers(blogName)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get followers: %w", err)
 	}
-	for _, fol := range followers {
-		actor, err := a.apGetRemoteActor(blogName, ap.IRI(fol.follower))
-		if err != nil || actor == nil {
-			a.error("ActivityPub: Failed to retrieve remote actor info", "actor", fol.follower, "err", err)
-			continue
-		}
-		inbox := actor.Inbox.GetLink()
-		if endpoints := actor.Endpoints; endpoints != nil && endpoints.SharedInbox != nil && endpoints.SharedInbox.GetLink() != "" {
-			inbox = endpoints.SharedInbox.GetLink()
-		}
-		if inbox == "" {
-			a.error("ActivityPub: Failed to get inbox for actor", "actor", fol.follower)
-			continue
-		}
-		username := apUsername(actor)
-		if err = a.db.apAddFollower(blogName, actor.GetLink().String(), inbox.String(), username); err != nil {
-			a.error("ActivityPub: Failed to update follower info", "err", err)
-			return err
+
+	if len(followers) == 0 {
+		a.info("No followers to move")
+		return nil
+	}
+
+	// Get all follower inboxes
+	inboxes, err := a.db.apGetAllInboxes(blogName)
+	if err != nil {
+		return fmt.Errorf("failed to get follower inboxes: %w", err)
+	}
+
+	a.info("Moving followers to new account", "count", len(followers), "target", targetAccount)
+
+	// Save the movedTo setting in the database so that the actor profile reflects the move
+	if err := a.setApMovedTo(blogName, targetAccount); err != nil {
+		return fmt.Errorf("failed to save movedTo setting: %w", err)
+	}
+
+	// Purge cache to ensure the actor profile with movedTo is served immediately
+	a.purgeCache()
+
+	// Create Move activity per ActivityPub spec:
+	// - actor: the account performing the move (this blog)
+	// - object: the account being moved (also this blog - it's moving itself)
+	// - target: the new account to move to
+	// Actor and Object are the same because the blog is announcing it's moving itself.
+	// The Move is addressed only to followers (not public) per ActivityPub conventions.
+	blogApiIri := a.apAPIri(blog)
+	move := ap.ActivityNew(ap.MoveType, a.apNewID(blog), blogApiIri)
+	move.Actor = blogApiIri
+	move.Target = ap.IRI(targetAccount)
+	move.To.Append(a.apGetFollowersCollectionId(blogName))
+
+	// Send Move activity to all follower inboxes using the same pattern as other activities
+	uniqueInboxes := lo.Uniq(inboxes)
+	a.apSendTo(blogIri, move, uniqueInboxes...)
+
+	a.info("Move activities queued for all followers", "count", len(uniqueInboxes), "target", targetAccount)
+	return nil
+}
+
+func (a *goBlog) apDomainMove(oldAddress, newAddress string) error {
+	// Validate old domain is in altAddresses
+	if !slices.Contains(a.cfg.Server.AltAddresses, oldAddress) {
+		return fmt.Errorf("old domain %s is not in altAddresses configuration - add it first and restart GoBlog", oldAddress)
+	}
+
+	// Validate new domain is the public address
+	if newAddress != a.cfg.Server.PublicAddress {
+		return fmt.Errorf("new domain %s does not match public address %s", newAddress, a.cfg.Server.PublicAddress)
+	}
+
+	a.info("Starting domain move", "oldAddress", oldAddress, "newAddress", newAddress)
+
+	// For each blog, send Move activity from old domain actor to followers
+	for blogName, blog := range a.cfg.Blogs {
+		if err := a.apSendDomainMoveForBlog(blogName, blog, oldAddress, newAddress); err != nil {
+			return fmt.Errorf("failed to send domain move for blog %s: %w", blogName, err)
 		}
 	}
+
+	return nil
+}
+
+func (a *goBlog) apSendDomainMoveForBlog(blogName string, blog *configBlog, oldAddress, newAddress string) error {
+	// Get all followers
+	followers, err := a.db.apGetAllFollowers(blogName)
+	if err != nil {
+		return fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	if len(followers) == 0 {
+		a.info("No followers for blog", "blog", blogName)
+		return nil
+	}
+
+	// Get all follower inboxes
+	inboxes, err := a.db.apGetAllInboxes(blogName)
+	if err != nil {
+		return fmt.Errorf("failed to get follower inboxes: %w", err)
+	}
+
+	a.info("Sending domain move for blog", "blog", blogName, "followers", len(followers))
+
+	// Old actor IRI (on the old domain)
+	oldActorIri := a.apIriForAddress(blog, oldAddress)
+	// New actor IRI (on the new domain)
+	newActorIri := a.apAPIri(blog)
+
+	// Create Move activity
+	// actor: the old domain actor (the one moving)
+	// object: also the old domain actor (it's moving itself)
+	// target: the new domain actor (where it's moving to)
+	move := ap.ActivityNew(ap.MoveType, ap.IRI(oldActorIri+"#move-"+blogName+"-"+time.Now().Format("20060102150405")), ap.IRI(oldActorIri))
+	move.Actor = ap.IRI(oldActorIri)
+	move.Target = newActorIri
+	// Followers collection on the old domain
+	move.To.Append(a.apGetFollowersCollectionIdForAddress(blogName, oldAddress))
+	move.Published = time.Now()
+
+	// Send Move activity to all follower inboxes
+	// We sign with the main key since it's the same instance
+	uniqueInboxes := lo.Uniq(inboxes)
+	for _, inbox := range uniqueInboxes {
+		if err := a.apQueueSendSigned(oldActorIri, inbox, move); err != nil {
+			a.error("Failed to queue Move activity", "inbox", inbox, "err", err)
+		}
+	}
+
+	a.info("Domain move activities queued for blog", "blog", blogName, "count", len(uniqueInboxes))
 	return nil
 }
 
@@ -685,12 +884,7 @@ func (a *goBlog) apGetRemoteActor(blog string, iri ap.IRI) (*ap.Actor, error) {
 	if item == nil {
 		return nil, fmt.Errorf("failed to load remote actor, item is nil: %s", iri)
 	}
-	var actor *ap.Actor
-	err = ap.OnActor(item, func(act *ap.Actor) error {
-		actor = act
-		return nil
-	})
-	return actor, err
+	return ap.ToActor(item)
 }
 
 // Inspired by go-ap/client's LoadIRI
@@ -701,14 +895,14 @@ func (a *goBlog) apLoadRemoteIRI(blog string, id ap.IRI) (ap.Item, error) {
 	if _, err := id.URL(); err != nil {
 		return nil, fmt.Errorf("trying to load an invalid IRI: %s, Error: %v", id, err)
 	}
+	bc, ok := a.cfg.Blogs[blog]
+	if !ok {
+		return nil, fmt.Errorf("blog not found: %s", blog)
+	}
 
 	var req *http.Request
 	var resp *http.Response
 	var err error
-
-	if a.apHttpClients[blog] == nil {
-		return nil, fmt.Errorf("no ActivityPub HTTP client for blog: %s", blog)
-	}
 
 	if req, err = http.NewRequestWithContext(
 		context.Background(),
@@ -725,7 +919,10 @@ func (a *goBlog) apLoadRemoteIRI(blog string, id ap.IRI) (ap.Item, error) {
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
 	req.Header.Set("Host", req.URL.Host)
 
-	if resp, err = a.apHttpClients[blog].Do(req); err != nil {
+	if err = a.signRequest(req, a.apIri(bc)); err != nil {
+		return nil, err
+	}
+	if resp, err = a.httpClient.Do(req); err != nil {
 		return nil, err
 	}
 	if resp == nil {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 	"time"
@@ -55,19 +56,16 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	// Micropub
 	hb.WriteElementOpen("link", "rel", "micropub", "href", a.getFullAddress("/micropub"))
 	// IndieAuth
-	hb.WriteElementOpen("link", "rel", "authorization_endpoint", "href", a.getFullAddress("/indieauth"))
-	hb.WriteElementOpen("link", "rel", "token_endpoint", "href", a.getFullAddress("/indieauth/token"))
-	hb.WriteElementOpen("link", "rel", "indieauth-metadata", "href", a.getFullAddress("/.well-known/oauth-authorization-server"))
+	indieAuthAddress := cmp.Or(a.cfg.Server.IndieAuthAddress, a.cfg.Server.PublicAddress)
+	hb.WriteElementOpen("link", "rel", "authorization_endpoint", "href", getFullAddressStatic(indieAuthAddress, indieAuthPath))
+	hb.WriteElementOpen("link", "rel", "token_endpoint", "href", getFullAddressStatic(indieAuthAddress, indieAuthPath+indieAuthTokenSubpath))
+	hb.WriteElementOpen("link", "rel", "indieauth-metadata", "href", getFullAddressStatic(indieAuthAddress, indieAuthMetadataPath))
 	// Rel-Me
 	user := a.cfg.User
 	if user != nil {
 		for _, i := range user.Identities {
 			hb.WriteElementOpen("link", "rel", "me", "href", i)
 		}
-	}
-	// Fediverse
-	if ap := a.cfg.ActivityPub; ap != nil && ap.Enabled {
-		hb.WriteElementOpen("meta", "name", "fediverse:creator", "content", fmt.Sprintf("@%s@%s", rd.BlogString, a.cfg.Server.publicHostname))
 	}
 	// Opensearch
 	if os := openSearchUrl(rd.Blog); os != "" {
@@ -436,12 +434,8 @@ func (a *goBlog) renderIndex(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 	)
 }
 
-type blogStatsRenderData struct {
-	tableUrl string
-}
-
 func (a *goBlog) renderBlogStats(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
-	bsd, ok := rd.Data.(*blogStatsRenderData)
+	bsd, ok := rd.Data.(*blogStatsData)
 	if !ok {
 		return
 	}
@@ -465,9 +459,7 @@ func (a *goBlog) renderBlogStats(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 				_ = a.renderMarkdownToWriter(hb, bs.Description, false)
 			}
 			// Table
-			hb.WriteElementOpen("p", "id", "loading", "data-table", bsd.tableUrl)
-			hb.WriteEscaped(a.ts.GetTemplateStringVariant(rd.Blog.Lang, "loading"))
-			hb.WriteElementClose("p")
+			a.renderBlogStatsTable(hb, rd, bsd)
 			hb.WriteElementOpen("script", "src", a.assetFileName("js/blogstats.js"), "defer", "")
 			hb.WriteElementClose("script")
 			hb.WriteElementClose("main")
@@ -479,11 +471,7 @@ func (a *goBlog) renderBlogStats(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 	)
 }
 
-func (a *goBlog) renderBlogStatsTable(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
-	bsd, ok := rd.Data.(*blogStatsData)
-	if !ok {
-		return
-	}
+func (a *goBlog) renderBlogStatsTable(hb *htmlbuilder.HtmlBuilder, rd *renderData, bsd *blogStatsData) {
 	hb.WriteElementOpen("table")
 	// Table header
 	hb.WriteElementOpen("thead")
@@ -1068,7 +1056,7 @@ func (a *goBlog) renderIndieAuth(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			hb.WriteElementClose("h1")
 			hb.WriteElementClose("main")
 			// Form
-			hb.WriteElementOpen("form", "method", "post", "action", "/indieauth/accept", "class", "p")
+			hb.WriteElementOpen("form", "method", "post", "action", indieAuthPath+"/accept", "class", "p")
 			// Scopes
 			if scopes := indieAuthRequest.Scopes; len(scopes) > 0 {
 				hb.WriteElementOpen("h3")
@@ -1550,6 +1538,8 @@ func (a *goBlog) renderEditor(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 
 type settingsRenderData struct {
 	blog                  string
+	blogTitle             string
+	blogDescription       string
 	sections              []*configSection
 	defaultSection        string
 	hideOldContentWarning bool
@@ -1615,6 +1605,9 @@ func (a *goBlog) renderSettings(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			for _, bs := range booleanSettings {
 				a.renderBooleanSetting(hb, rd, bs.path, a.ts.GetTemplateStringVariant(rd.Blog.Lang, bs.descriptionKey), bs.name, bs.value)
 			}
+
+			// Blog settings (title, description)
+			a.renderBlogSettings(hb, rd, srd)
 
 			// User settings
 			a.renderUserSettings(hb, rd, srd)

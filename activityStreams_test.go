@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-fed/httpsig"
+	"code.superseriousbusiness.org/httpsig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ap "go.goblog.app/app/pkgs/activitypub"
@@ -88,7 +88,7 @@ func Test_toAPNote_PublicNote(t *testing.T) {
 	const expectedPublicNoteJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Article","mediaType":"text/html","name":"Test Title","content":"<div class=\"e-content\"><p>Test content</p>\n</div>","attributedTo":"https://example.com","url":"https://example.com/test","to":["https://www.w3.org/ns/activitystreams#Public","https://example.com/activitypub/followers/testblog"],"published":"2023-01-01T00:00:00Z","updated":"2023-01-02T00:00:00Z"}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedPublicNoteJSON, string(binary))
+	assert.JSONEq(t, expectedPublicNoteJSON, string(binary))
 }
 
 func Test_toAPNote_UnlistedNote(t *testing.T) {
@@ -131,7 +131,7 @@ func Test_toAPNote_UnlistedNote(t *testing.T) {
 	const expectedUnlistedNoteJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Note","mediaType":"text/html","content":"<div class=\"e-content\"><p>Test content</p>\n</div>","attributedTo":"https://example.com","url":"https://example.com/test","to":["https://example.com/activitypub/followers/testblog"],"cc":["https://www.w3.org/ns/activitystreams#Public"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedUnlistedNoteJSON, string(binary))
+	assert.JSONEq(t, expectedUnlistedNoteJSON, string(binary))
 }
 
 func Test_toAPNote_WithImages(t *testing.T) {
@@ -182,7 +182,7 @@ func Test_toAPNote_WithImages(t *testing.T) {
 	const expectedNoteWithImagesJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Note","mediaType":"text/html","content":"<div class=\"e-content\"><p>Test content</p>\n</div>","attachment":[{"type":"Image","url":"https://example.com/image1.jpg"},{"type":"Image","url":"https://example.com/image2.jpg"}],"attributedTo":"https://example.com","url":"https://example.com/test","to":["https://www.w3.org/ns/activitystreams#Public","https://example.com/activitypub/followers/testblog"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedNoteWithImagesJSON, string(binary))
+	assert.JSONEq(t, expectedNoteWithImagesJSON, string(binary))
 }
 
 func Test_toAPNote_WithTags(t *testing.T) {
@@ -230,7 +230,7 @@ func Test_toAPNote_WithTags(t *testing.T) {
 	const expectedNoteWithTagsJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Note","mediaType":"text/html","content":"<div class=\"e-content\"><p>Test content</p>\n</div>","attributedTo":"https://example.com","tag":[{"type":"Hashtag","name":"tag1","url":"https://example.com/tags/tag1"},{"type":"Hashtag","name":"tag2","url":"https://example.com/tags/tag2"}],"url":"https://example.com/test","to":["https://www.w3.org/ns/activitystreams#Public","https://example.com/activitypub/followers/testblog"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedNoteWithTagsJSON, string(binary))
+	assert.JSONEq(t, expectedNoteWithTagsJSON, string(binary))
 }
 
 func Test_toAPNote_WithMentions(t *testing.T) {
@@ -279,7 +279,7 @@ func Test_toAPNote_WithMentions(t *testing.T) {
 	const expectedNoteWithMentionsJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Note","mediaType":"text/html","content":"<div class=\"e-content\"><p>Test content</p>\n</div>","attributedTo":"https://example.com","tag":[{"id":"https://example.com/@user1","type":"Mention","href":"https://example.com/@user1"},{"id":"https://example.com/@user2","type":"Mention","href":"https://example.com/@user2"}],"url":"https://example.com/test","to":["https://www.w3.org/ns/activitystreams#Public","https://example.com/activitypub/followers/testblog"],"cc":["https://example.com/@user1","https://example.com/@user2"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedNoteWithMentionsJSON, string(binary))
+	assert.JSONEq(t, expectedNoteWithMentionsJSON, string(binary))
 }
 
 func Test_toAPNote_WithReply(t *testing.T) {
@@ -323,7 +323,7 @@ func Test_toAPNote_WithReply(t *testing.T) {
 	const expectedNoteWithReplyJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com/test","type":"Note","mediaType":"text/html","content":"<div class=\"h-cite u-in-reply-to\"><p><strong>Reply to: <a class=\"u-url\" rel=\"noopener\" target=\"_blank\" href=\"https://example.com/reply-to\">https://example.com/reply-to</a></strong></p></div><div class=\"e-content\"><p>Test content</p>\n</div>","attributedTo":"https://example.com","inReplyTo":"https://example.com/reply-to","url":"https://example.com/test","to":["https://www.w3.org/ns/activitystreams#Public","https://example.com/activitypub/followers/testblog"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(note)
 	require.NoError(t, err)
-	assert.Equal(t, expectedNoteWithReplyJSON, string(binary))
+	assert.JSONEq(t, expectedNoteWithReplyJSON, string(binary))
 }
 
 func Test_activityPubId(t *testing.T) {
@@ -368,7 +368,7 @@ func Test_toApPerson(t *testing.T) {
 	require.NoError(t, err)
 	_ = app.initTemplateStrings()
 
-	person := app.toApPerson("testblog")
+	person := app.toApPerson("testblog", "")
 
 	assert.Equal(t, "Test Blog", person.Name.First().String())
 	assert.Equal(t, "A test blog", person.Summary.First().String())
@@ -384,7 +384,7 @@ func Test_toApPerson(t *testing.T) {
 	const expectedPersonJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com","type":"Person","name":"Test Blog","summary":"A test blog","url":"https://example.com","inbox":"https://example.com/activitypub/inbox/testblog","followers":"https://example.com/activitypub/followers/testblog","preferredUsername":"testblog","publicKey":{"id":"https://example.com#main-key","owner":"https://example.com","publicKeyPem":"-----BEGIN PUBLIC KEY-----\ndGVzdC1rZXk=\n-----END PUBLIC KEY-----\n"},"alsoKnownAs":["https://example.com/aka1"],"attributionDomains":["example.com"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(person)
 	require.NoError(t, err)
-	assert.Equal(t, expectedPersonJSON, string(binary))
+	assert.JSONEq(t, expectedPersonJSON, string(binary))
 }
 
 func Test_toApPerson_WithProfileImage(t *testing.T) {
@@ -414,7 +414,7 @@ func Test_toApPerson_WithProfileImage(t *testing.T) {
 	app.cfg.User.ProfileImageFile = tempFile
 	app.profileImageHashGroup = nil // Reset to recompute hash
 
-	person := app.toApPerson("testblog")
+	person := app.toApPerson("testblog", "")
 
 	assert.Equal(t, "Test Blog", person.Name.First().String())
 	assert.Equal(t, "A test blog", person.Summary.First().String())
@@ -436,7 +436,7 @@ func Test_toApPerson_WithProfileImage(t *testing.T) {
 	const expectedPersonWithIconJSON = `{"@context":["https://www.w3.org/ns/activitystreams","https://w3id.org/security/v1"],"id":"https://example.com","type":"Person","name":"Test Blog","summary":"A test blog","icon":{"type":"Image","mediaType":"image/jpeg","url":"https://example.com/profile.jpg?v=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"url":"https://example.com","inbox":"https://example.com/activitypub/inbox/testblog","followers":"https://example.com/activitypub/followers/testblog","preferredUsername":"testblog","publicKey":{"id":"https://example.com#main-key","owner":"https://example.com","publicKeyPem":"-----BEGIN PUBLIC KEY-----\ndGVzdC1rZXk=\n-----END PUBLIC KEY-----\n"},"alsoKnownAs":["https://example.com/aka1"],"attributionDomains":["example.com"]}`
 	binary, err := jsonld.WithContext(jsonld.IRI(ap.ActivityBaseURI), jsonld.IRI(ap.SecurityContextURI)).Marshal(person)
 	require.NoError(t, err)
-	assert.Equal(t, expectedPersonWithIconJSON, string(binary))
+	assert.JSONEq(t, expectedPersonWithIconJSON, string(binary))
 }
 
 func Test_serveActivityStreams(t *testing.T) {
@@ -591,7 +591,7 @@ func Test_toApPerson_WithMultipleAlsoKnownAs(t *testing.T) {
 	require.NoError(t, err)
 	_ = app.initTemplateStrings()
 
-	person := app.toApPerson("testblog")
+	person := app.toApPerson("testblog", "")
 
 	// Verify AlsoKnownAs
 	assert.Len(t, person.AlsoKnownAs, 3)
@@ -635,7 +635,7 @@ func Test_toApPerson_WithoutExtensions(t *testing.T) {
 	require.NoError(t, err)
 	_ = app.initTemplateStrings()
 
-	person := app.toApPerson("testblog")
+	person := app.toApPerson("testblog", "")
 
 	// Verify fields are empty
 	assert.Len(t, person.AlsoKnownAs, 0)
@@ -690,13 +690,21 @@ func Test_apSendSigned(t *testing.T) {
 		0,
 	)
 	require.NoError(t, err)
+	app.apSignerNoDigest, _, err = httpsig.NewSigner(
+		[]httpsig.Algorithm{httpsig.RSA_SHA256},
+		httpsig.DigestSha256,
+		[]string{httpsig.RequestTarget, "date", "host"},
+		httpsig.Signature,
+		0,
+	)
+	require.NoError(t, err)
 
 	// Create a test activity
 	note := ap.ObjectNew(ap.NoteType)
 	note.ID = ap.IRI("https://example.com/notes/1")
-	note.Content = ap.DefaultNaturalLanguage("Test content")
+	note.Content = ap.NaturalLanguageValues{{Lang: "en", Value: "Test content"}}
 
-	activity := ap.CreateNew(ap.ID("https://example.com/activities/1"), note)
+	activity := ap.ActivityNew(ap.CreateType, ap.IRI("https://example.com/activities/1"), note)
 	activity.Actor = ap.IRI("https://example.com")
 
 	// Marshal the activity
@@ -750,24 +758,57 @@ func Test_signRequest(t *testing.T) {
 		0,
 	)
 	require.NoError(t, err)
-
-	// Create a test request
-	body := []byte(`{"type":"Note","content":"Test"}`)
-	req, err := http.NewRequest(http.MethodPost, "https://remote.example/inbox", bytes.NewReader(body))
+	app.apSignerNoDigest, _, err = httpsig.NewSigner(
+		[]httpsig.Algorithm{httpsig.RSA_SHA256},
+		httpsig.DigestSha256,
+		[]string{httpsig.RequestTarget, "date", "host"},
+		httpsig.Signature,
+		0,
+	)
 	require.NoError(t, err)
 
-	// Sign the request
-	err = app.signRequest(req, "https://example.com")
-	require.NoError(t, err)
+	t.Run("PostWithDigest", func(t *testing.T) {
+		body := []byte(`{"type":"Note","content":"Test"}`)
+		req, err := http.NewRequest(http.MethodPost, "https://remote.example/inbox", bytes.NewReader(body))
+		require.NoError(t, err)
 
-	// Verify signature components
-	assert.NotEmpty(t, req.Header.Get("Date"))
-	assert.NotEmpty(t, req.Header.Get("Host"))
-	assert.NotEmpty(t, req.Header.Get("Signature"))
+		err = app.signRequest(req, "https://example.com")
+		require.NoError(t, err)
 
-	// Verify signature header format
-	sig := req.Header.Get("Signature")
-	assert.Contains(t, sig, "keyId=")
-	assert.Contains(t, sig, "signature=")
-	assert.Contains(t, sig, "https://example.com#main-key")
+		assert.NotEmpty(t, req.Header.Get("Date"))
+		assert.NotEmpty(t, req.Header.Get("Host"))
+		assert.NotEmpty(t, req.Header.Get("Signature"))
+		assert.NotEmpty(t, req.Header.Get("Digest"))
+
+		sig := req.Header.Get("Signature")
+		assert.Contains(t, sig, "keyId=")
+		assert.Contains(t, sig, "signature=")
+		assert.Contains(t, sig, "https://example.com#main-key")
+		assert.Contains(t, sig, "(request-target) date host digest")
+	})
+
+	t.Run("GetWithoutDigest", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "https://remote.example/inbox", nil)
+		require.NoError(t, err)
+
+		err = app.signRequest(req, "https://example.com")
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, req.Header.Get("Date"))
+		assert.NotEmpty(t, req.Header.Get("Host"))
+		assert.NotEmpty(t, req.Header.Get("Signature"))
+		assert.Empty(t, req.Header.Get("Digest"))
+
+		sig := req.Header.Get("Signature")
+		assert.Contains(t, sig, "keyId=")
+		assert.Contains(t, sig, "signature=")
+		assert.Contains(t, sig, "https://example.com#main-key")
+		assert.Contains(t, sig, "(request-target) date host")
+		assert.NotContains(t, sig, "digest")
+
+		verifier, err := httpsig.NewVerifier(req)
+		require.NoError(t, err)
+		err = verifier.Verify(&app.apPrivateKey.PublicKey, httpsig.RSA_SHA256)
+		assert.NoError(t, err)
+	})
 }

@@ -300,6 +300,7 @@ For all available configuration options with detailed explanations, see [`exampl
 
 ### Important Notes
 
+- **Blog title and description**: These are now configured via the `/settings` UI. Any title/description in the YAML config will be migrated to the database on first run.
 - **Sections**: Sections are now configured via the `/settings` UI. Any sections in the YAML config will be migrated to the database on first run.
 - **Default values**: Most settings have sensible defaults. Only configure what you need to change.
 - **Reload**: After changing the config file, restart GoBlog or use `/reload` (only rebuilds router, doesn't re-read YAML).
@@ -500,6 +501,20 @@ Use your blog as your identity on the web.
 3. Approve the authorization request on your blog
 4. You're logged in!
 
+**Custom IndieAuth Address:**
+
+If you're migrating domains and want to keep using your old domain for IndieAuth (to preserve existing app authorizations), you can configure an alternative IndieAuth address:
+
+```yaml
+server:
+  publicAddress: https://new.example.com
+  altAddresses:
+    - https://old.example.com
+  indieAuthAddress: https://old.example.com  # Must be one of altAddresses
+```
+
+This will advertise the IndieAuth endpoints on the old domain while serving all other content from the new domain.
+
 ### Webmention
 
 Send and receive webmentions automatically.
@@ -542,23 +557,65 @@ activityPub:
 - ✅ Receive likes and boosts (notifications)
 - ✅ Followers collection
 - ✅ Webfinger discovery
-- ❌ Following others (not supported yet)
+- ✅ Account migration (Move activity support)
+- ❌ Following others (not supported - publish only)
 
 **Endpoints:**
 - `/.well-known/webfinger` - Webfinger
 - `/activitypub/inbox/{blog}` - Inbox
 - `/activitypub/followers/{blog}` - Followers
 
-**Migration from another Fediverse server:**
+**Migration from another Fediverse server to GoBlog:**
 
-If you're moving from another Fediverse server and want to migrate your followers:
+If you're moving from another Fediverse server and want to migrate your followers to GoBlog:
+
+1. Add your old account URL to the `alsoKnownAs` config:
 
 ```yaml
 activityPub:
   enabled: true
   alsoKnownAs:
-    - https://mastodon.social/users/oldusername
+    - https://mastodon.example.com/users/oldusername
 ```
+
+2. On your old Fediverse account, initiate the move to your GoBlog account using your old server's migration feature.
+
+**Migration from GoBlog to another Fediverse server:**
+
+If you're moving away from GoBlog to another Fediverse server:
+
+1. Set up your new account on the target Fediverse server
+2. Add your GoBlog account URL to the new account's "Also Known As" aliases (e.g., `https://yourblog.com`)
+3. Run the CLI command to send Move activities to all followers:
+
+```bash
+./GoBlog activitypub move-followers blogname https://newserver.example.com/users/newusername
+```
+
+This sends a Move activity to all your followers, notifying them that your account has moved. Fediverse servers that support account migration will automatically update the follow to your new account.
+
+**Domain change (moving GoBlog to a new domain):**
+
+If you're changing your GoBlog domain (e.g., from `old.example.com` to `new.example.com`):
+
+1. If you are using a reverse proxy, configure it to serve both domains pointing to your GoBlog instance
+2. Add the old domain to the `altAddresses` config:
+
+```yaml
+server:
+  publicAddress: https://new.example.com
+  altAddresses:
+    - https://old.example.com
+```
+
+3. Restart GoBlog to apply the configuration
+4. Run the CLI command to send Move activities to all followers:
+
+```bash
+./GoBlog activitypub domainmove https://old.example.com https://new.example.com
+```
+
+This sends a Move activity from the old domain's actor to all followers, notifying them that the account has moved to the new domain. The old domain will continue to serve ActivityPub/Webfinger requests with the actor showing `movedTo` pointing to the new domain, while all other requests will be redirected to the new domain.
 
 ### Bluesky / ATProto
 
@@ -1004,6 +1061,7 @@ For more examples, see the [embedded plugins](/plugins/) in the repository.
 Access `/settings` to configure:
 
 - **User profile** - Name, username, profile image
+- **Blog settings** - Blog title and description (subtitle)
 - **Blog sections** - Add, edit, delete sections; configure path templates
 - **Default section** - Set default section per blog
 - **UI preferences** - Hide buttons, add reply context, etc.
@@ -1115,6 +1173,65 @@ Exports all posts as Markdown files with front matter to the specified directory
 ```
 
 Updates follower information from remote ActivityPub servers.
+
+### Check and Clean ActivityPub Followers
+
+```bash
+./GoBlog --config ./config/config.yml activitypub check-followers blogname
+```
+
+Checks all ActivityPub followers by contacting each follower's home server. Reports which followers are still active, which accounts no longer exist (gone), and which have moved to a new account. After the check, displays a summary and prompts for confirmation before removing gone and moved followers from the database.
+
+### Add ActivityPub Follower
+
+```bash
+./GoBlog --config ./config/config.yml activitypub add-follower blogname https://mastodon.example.com/users/alice
+./GoBlog --config ./config/config.yml activitypub add-follower blogname @alice@mastodon.example.com
+```
+
+Manually adds an ActivityPub follower by actor IRI or `@user@instance` handle. When a handle is provided, it is resolved via WebFinger to find the actor's IRI. The remote actor profile is then fetched and stored in the follower database. Useful for re-adding accidentally removed followers.
+
+### Move ActivityPub Followers
+
+```bash
+./GoBlog --config ./config/config.yml activitypub move-followers blogname https://newserver.example.com/users/newaccount
+```
+
+Sends Move activities to all followers, instructing them that your account has moved to a new Fediverse server. The blog's ActivityPub profile will also be updated with a `movedTo` field pointing to the new account.
+
+**Requirements before running:**
+1. Create your new account on the target Fediverse server
+2. Add your GoBlog account URL (e.g., `https://yourblog.com`) to the new account's "Also Known As" aliases
+
+**Note:** Most ActivityPub implementations will automatically trigger a follow for the new account when they receive the Move activity.
+
+### Clear Moved Status
+
+```bash
+./GoBlog --config ./config/config.yml activitypub clear-moved blogname
+```
+
+Clears the `movedTo` setting from a blog's ActivityPub profile. Use this if you need to undo a migration or if you accidentally set the wrong target.
+
+### Domain Move
+
+```bash
+./GoBlog --config ./config/config.yml activitypub domainmove https://old.example.com https://new.example.com
+```
+
+Sends Move activities to all followers when changing your GoBlog domain. This is used when you're moving GoBlog from one domain to another (e.g., `old.example.com` to `new.example.com`).
+
+**Requirements before running:**
+1. Configure both domains to point to your GoBlog instance
+2. Add the old domain to `altAddresses` in your server config
+3. Update `publicAddress` to the new domain
+4. Restart GoBlog
+
+**How it works:**
+- The old domain's actor will serve with `movedTo` pointing to the new domain
+- The new domain's actor will have `alsoKnownAs` including the old domain
+- Move activities are sent from the old domain's actor to all followers
+- Non-ActivityPub requests to the old domain will be redirected to the new domain
 
 ### Profiling
 
@@ -1310,20 +1427,19 @@ blogs:
   en:
     path: /
     lang: en
-    title: My English Blog
+    # title and description are configured via the settings UI
   
   de:
     path: /de
     lang: de
-    title: Mein deutscher Blog
   
   fr:
     path: /fr
     lang: fr
-    title: Mon blog français
 ```
 
 Each blog has its own:
+- Title and description (configurable via settings UI)
 - Sections and taxonomies
 - Menus and navigation
 - Settings and preferences

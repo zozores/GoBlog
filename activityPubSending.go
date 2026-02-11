@@ -21,8 +21,10 @@ type apRequest struct {
 	Try         int
 }
 
+var apSendInterval = 30 * time.Second
+
 func (a *goBlog) initAPSendQueue() {
-	a.listenOnQueue("ap", 30*time.Second, func(qi *queueItem, dequeue func(), reschedule func(time.Duration)) {
+	a.listenOnQueue("ap", apSendInterval, func(qi *queueItem, dequeue func(), reschedule func(time.Duration)) {
 		var r apRequest
 		if err := gob.NewDecoder(bytes.NewReader(qi.content)).Decode(&r); err != nil {
 			a.error("Activitypub queue", "err", err)
@@ -39,8 +41,7 @@ func (a *goBlog) initAPSendQueue() {
 				bufferpool.Put(buf)
 				return
 			}
-			a.info("AP request failed for the 20th time", "to", r.To)
-			_ = a.db.apRemoveInbox(r.To)
+			a.info("AP request failed for the 20th time, giving up on activity", "to", r.To)
 		}
 		dequeue()
 	})

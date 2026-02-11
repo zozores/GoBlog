@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"sync"
 
+	"code.superseriousbusiness.org/httpsig"
 	shutdowner "git.jlel.se/jlelse/go-shutdowner"
 	ts "git.jlel.se/jlelse/template-strings"
 	ct "github.com/elnormous/contenttype"
-	"github.com/go-fed/httpsig"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/kaorimatz/go-opml"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
@@ -28,13 +28,11 @@ type goBlog struct {
 	apPrivateKey       *rsa.PrivateKey
 	apPubKeyBytes      []byte
 	apSigner           httpsig.Signer
+	apSignerNoDigest   httpsig.Signer
 	apSignMutex        sync.Mutex
-	apHttpClients      map[string]*http.Client
 	webfingerResources map[string]*configBlog
 	webfingerAccts     map[string]string
 	apUserHandle       map[string]string
-	// ActivityStreams
-	asCheckMediaTypes []ct.MediaType
 	// Assets
 	assetFileNames map[string]string
 	assetFiles     map[string]*assetFile
@@ -43,8 +41,7 @@ type goBlog struct {
 	autocertInit    sync.Once
 	// Blogroll
 	blogrollCacheGroup singleflightx.Group[string, []*opml.Outline]
-	// Blogstats
-	blogStatsCacheGroup singleflightx.Group[string, *blogStatsData]
+
 	// Cache
 	cache *cache
 	// Config

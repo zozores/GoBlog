@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,26 +42,29 @@ type config struct {
 }
 
 type configServer struct {
-	Logging             bool     `mapstructure:"logging"`
-	LogFile             string   `mapstructure:"logFile"`
-	Port                int      `mapstructure:"port"`
-	PublicAddress       string   `mapstructure:"publicAddress"`
-	ShortPublicAddress  string   `mapstructure:"shortPublicAddress"`
-	MediaAddress        string   `mapstructure:"mediaAddress"`
-	PublicHTTPS         bool     `mapstructure:"publicHttps"`
-	AcmeDir             string   `mapstructure:"acmeDir"`
-	AcmeEabKid          string   `mapstructure:"acmeEabKid"`
-	AcmeEabKey          string   `mapstructure:"acmeEabKey"`
-	HttpsCert           string   `mapstructure:"httpsCert"`
-	HttpsKey            string   `mapstructure:"httpsKey"`
-	HttpsRedirect       bool     `mapstructure:"httpsRedirect"`
-	Tor                 bool     `mapstructure:"tor"`
-	SecurityHeaders     bool     `mapstructure:"securityHeaders"`
-	CSPDomains          []string `mapstructure:"cspDomains"`
-	publicHostname      string
-	shortPublicHostname string
-	mediaHostname       string
-	manualHttps         bool
+	Logging            bool     `mapstructure:"logging"`
+	LogFile            string   `mapstructure:"logFile"`
+	Port               int      `mapstructure:"port"`
+	PublicAddress      string   `mapstructure:"publicAddress"`
+	ShortPublicAddress string   `mapstructure:"shortPublicAddress"`
+	MediaAddress       string   `mapstructure:"mediaAddress"`
+	AltAddresses       []string `mapstructure:"altAddresses"`
+	IndieAuthAddress   string   `mapstructure:"indieAuthAddress"`
+	PublicHTTPS        bool     `mapstructure:"publicHttps"`
+	AcmeDir            string   `mapstructure:"acmeDir"`
+	AcmeEabKid         string   `mapstructure:"acmeEabKid"`
+	AcmeEabKey         string   `mapstructure:"acmeEabKey"`
+	HttpsCert          string   `mapstructure:"httpsCert"`
+	HttpsKey           string   `mapstructure:"httpsKey"`
+	HttpsRedirect      bool     `mapstructure:"httpsRedirect"`
+	Tor                bool     `mapstructure:"tor"`
+	SecurityHeaders    bool     `mapstructure:"securityHeaders"`
+	CSPDomains         []string `mapstructure:"cspDomains"`
+	publicHost         string
+	shortPublicHost    string
+	mediaHost          string
+	altHosts           []string
+	manualHttps        bool
 }
 
 type configDb struct {
@@ -106,6 +110,9 @@ type configBlog struct {
 	addReplyContext       bool
 	addLikeTitle          bool
 	addLikeContext        bool
+	// Original config values (for deprecation detection)
+	configTitle       string
+	configDescription string
 	// Editor state WebSockets
 	esws sync.Map
 	esm  sync.Mutex
@@ -409,20 +416,35 @@ func (a *goBlog) initConfig(logging bool) error {
 	if err != nil {
 		return errors.New("Invalid public address: " + err.Error())
 	}
-	a.cfg.Server.publicHostname = publicURL.Hostname()
+	a.cfg.Server.publicHost = publicURL.Hostname()
 	if sa := a.cfg.Server.ShortPublicAddress; sa != "" {
 		shortPublicURL, err := url.Parse(sa)
 		if err != nil {
 			return errors.New("Invalid short public address: " + err.Error())
 		}
-		a.cfg.Server.shortPublicHostname = shortPublicURL.Hostname()
+		a.cfg.Server.shortPublicHost = shortPublicURL.Hostname()
 	}
 	if ma := a.cfg.Server.MediaAddress; ma != "" {
 		mediaUrl, err := url.Parse(ma)
 		if err != nil {
 			return errors.New("Invalid media address: " + err.Error())
 		}
-		a.cfg.Server.mediaHostname = mediaUrl.Hostname()
+		a.cfg.Server.mediaHost = mediaUrl.Hostname()
+	}
+	a.cfg.Server.altHosts = []string{}
+	for _, aa := range a.cfg.Server.AltAddresses {
+		altURL, err := url.Parse(aa)
+		if err != nil {
+			return errors.New("Invalid alternative address: " + err.Error())
+		}
+		a.cfg.Server.altHosts = append(a.cfg.Server.altHosts, altURL.Hostname())
+	}
+	// Check IndieAuth address
+	if ia := a.cfg.Server.IndieAuthAddress; ia != "" {
+		// Validate that IndieAuthAddress is one of the AltAddresses
+		if !slices.Contains(a.cfg.Server.AltAddresses, ia) {
+			return errors.New("indieAuthAddress must be one of the altAddresses")
+		}
 	}
 	// Check port or set default
 	if a.cfg.Server.Port == 0 {
@@ -558,6 +580,37 @@ func (a *goBlog) initConfig(logging bool) error {
 		if br := bc.Blogroll; br != nil && br.Enabled && br.Opml == "" {
 			br.Enabled = false
 		}
+		// Save original config values for deprecation detection, then load/migrate blog title and description
+		bc.configTitle = bc.Title
+		bc.configDescription = bc.Description
+		// Blog title
+		if blogTitle, err := a.getBlogTitle(blog); err != nil {
+			return err
+		} else if blogTitle == "" {
+			// Migrate to database if configured in config
+			if bc.Title != "" {
+				if err = a.setBlogTitle(blog, bc.Title); err != nil {
+					return err
+				}
+			}
+		} else {
+			// Set value from database
+			bc.Title = blogTitle
+		}
+		// Blog description
+		if blogDescription, err := a.getBlogDescription(blog); err != nil {
+			return err
+		} else if blogDescription == "" {
+			// Migrate to database if configured in config
+			if bc.Description != "" {
+				if err = a.setBlogDescription(blog, bc.Description); err != nil {
+					return err
+				}
+			}
+		} else {
+			// Set value from database
+			bc.Description = blogDescription
+		}
 		// Load other settings from database
 		configs := []*bool{
 			&bc.hideOldContentWarning, &bc.hideShareButton, &bc.hideTranslateButton, &bc.hideSpeakButton,
@@ -668,4 +721,19 @@ func (a *goBlog) getBlog(r *http.Request) (string, *configBlog) {
 
 func (a *goBlog) getBlogFromPost(p *post) *configBlog {
 	return a.cfg.Blogs[cmp.Or(p.Blog, a.cfg.DefaultBlog)]
+}
+
+func (a *goBlog) isLocalURL(urlStr string) bool {
+	if strings.HasPrefix(urlStr, a.cfg.Server.PublicAddress) {
+		return true
+	}
+	if a.cfg.Server.ShortPublicAddress != "" && strings.HasPrefix(urlStr, a.cfg.Server.ShortPublicAddress) {
+		return true
+	}
+	for _, altDomain := range a.cfg.Server.AltAddresses {
+		if strings.HasPrefix(urlStr, altDomain) {
+			return true
+		}
+	}
+	return false
 }

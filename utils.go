@@ -151,9 +151,12 @@ func toLocal(s string) (string, error) {
 	if s == "" {
 		return "", nil
 	}
-	d, err := dateparse.ParseLocal(s)
+	d, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return "", err
+		d, err = dateparse.ParseLocal(s)
+		if err != nil {
+			return "", err
+		}
 	}
 	return d.Local().Format(time.RFC3339), nil
 }
@@ -167,9 +170,12 @@ func toUTC(s string) (string, error) {
 	if s == "" {
 		return "", nil
 	}
-	d, err := dateparse.ParseLocal(s)
+	d, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return "", err
+		d, err = dateparse.ParseLocal(s)
+		if err != nil {
+			return "", err
+		}
 	}
 	return d.UTC().Format(time.RFC3339), nil
 }
@@ -178,9 +184,12 @@ func toLocalTime(date string) time.Time {
 	if date == "" {
 		return time.Time{}
 	}
-	d, err := dateparse.ParseLocal(date)
+	d, err := time.Parse(time.RFC3339, date)
 	if err != nil {
-		return time.Time{}
+		d, err = dateparse.ParseLocal(date)
+		if err != nil {
+			return time.Time{}
+		}
 	}
 	return d.Local()
 }
@@ -332,6 +341,10 @@ func (rt *handlerRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 	if rt.handler != nil {
 		// Fake request with handler
 		rec := httptest.NewRecorder()
+		// Ensure Host header is set from URL if not already set
+		if req.Host == "" && req.URL != nil && req.URL.Host != "" {
+			req.Host = req.URL.Host
+		}
 		rt.handler.ServeHTTP(rec, req)
 		resp := rec.Result()
 		// Copy request to response
@@ -416,4 +429,12 @@ func generateSecurePassword(length int) (string, error) {
 		sb.WriteRune(runes[r.Int64()])
 	}
 	return sb.String(), nil
+}
+
+func getHost(address string) string {
+	u, err := url.Parse(address)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }

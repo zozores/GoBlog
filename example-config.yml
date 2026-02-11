@@ -31,6 +31,13 @@ server:
   publicAddress: https://example.com # Public address to use for the blog
   shortPublicAddress: https://short.example.com # Optional short address, will redirect to main address
   mediaAddress: https://media.example.com # Optional domain to use for serving media files
+  # Alternative addresses (Used for ActivityPub Move support, when migrating to a new domain)
+  # altAddresses: # Optional, add old addresses here when migrating to a new address
+  #   - https://old.example.com
+  # IndieAuth address (optional, must be one of the altAddresses)
+  # Use this if you want IndieAuth to use an alternative address instead of publicAddress.
+  # This is useful when migrating domains and you want to keep using the old domain for IndieAuth.
+  # indieAuthAddress: https://old.example.com
   # Security
   publicHttps: true # Use Let's Encrypt and serve site with HTTPS
   # To use another ACME server like ZeroSSL, set the following
@@ -193,8 +200,8 @@ blogs:
   en: # Blog code
     path: / # Path of blog
     lang: en # Language of blog
-    title: My awesome blog # Blog title
-    description: My awesome blog description # Blog description
+    # title: My awesome blog # Blog title (DEPRECATED: Use settings UI instead, will be migrated to database)
+    # description: My awesome blog description # Blog description (DEPRECATED: Use settings UI instead, will be migrated to database)
     pagination: 10 # Number of posts per page
     # Taxonomies
     taxonomies:
