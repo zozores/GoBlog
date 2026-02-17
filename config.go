@@ -82,6 +82,8 @@ type configBlog struct {
 	Path           string                    `mapstructure:"path"`
 	Lang           string                    `mapstructure:"lang"`
 	Title          string                    `mapstructure:"title"`
+	LicenseName    string                    `mapstructure:"licenseName"`
+	LicenseUrl     string                    `mapstructure:"licenseUrl"`
 	Description    string                    `mapstructure:"description"`
 	Pagination     int                       `mapstructure:"pagination"`
 	DefaultSection string                    `mapstructure:"defaultsection"`
