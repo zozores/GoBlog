@@ -30,6 +30,10 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	hb.WriteElementOpen("html", "lang", rd.Blog.Lang)
 	hb.WriteElementOpen("meta", "charset", "utf-8")
 	hb.WriteElementOpen("meta", "name", "viewport", "content", "width=device-width,initial-scale=1")
+	// Fonts
+	hb.WriteElementOpen("link", "rel", "preconnect", "href", "https://fonts.googleapis.com")
+	hb.WriteElementOpen("link", "rel", "preconnect", "href", "https://fonts.gstatic.com", "crossorigin", "")
+	hb.WriteElementOpen("link", "href", "https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap", "rel", "stylesheet")
 	// CSS
 	hb.WriteElementOpen("link", "rel", "stylesheet", "href", a.assetFileName("css/styles.css"))
 	// Canonical URL
@@ -105,6 +109,8 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 		hb.WriteElementClose("i")
 		hb.WriteElementClose("p")
 	}
+	// Social icons
+	a.renderSocialIcons(hb, rd.Blog)
 	// Main menu
 	if mm, ok := rd.Blog.Menus["main"]; ok {
 		hb.WriteElementOpen("nav")

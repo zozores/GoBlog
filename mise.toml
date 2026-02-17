@@ -1,2 +1,4 @@
 [tools]
 go = "latest"
+python = "latest"
+uv = "latest"

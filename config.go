@@ -101,6 +101,7 @@ type configBlog struct {
 	Contact        *configContact            `mapstructure:"contact"`
 	Announcement   *configAnnouncement       `mapstructure:"announcement"`
 	Atproto        *configAtproto            `mapstructure:"atproto"`
+	Social         []*configSocialItem       `mapstructure:"social"`
 	// Configs read from database
 	hideOldContentWarning bool
 	hideShareButton       bool
@@ -373,6 +374,11 @@ type configAtproto struct {
 	Handle         string   `mapstructure:"handle"`
 	Password       string   `mapstructure:"password"`
 	TagsTaxonomies []string `mapstructure:"tagsTaxonomies"`
+}
+
+type configSocialItem struct {
+	Name string `mapstructure:"name"` // github, linkedin, x, mastodon, bluesky, instagram, facebook, email
+	Link string `mapstructure:"link"`
 }
 
 func (a *goBlog) loadConfigFile(file string) error {

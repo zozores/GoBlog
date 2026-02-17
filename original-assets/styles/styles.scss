@@ -30,8 +30,9 @@ $colors: (
 }
 
 .sans-serif {
-  font-family: sans-serif;
+  font-family: "Fira Code", monospace;
 }
+
 
 .monospace {
   font-family: monospace;
@@ -405,6 +406,7 @@ button.share-modal-close {
     width: auto;
     white-space: nowrap;
   }
+
   td.expand {
     max-width: none;
     width: 100%;
