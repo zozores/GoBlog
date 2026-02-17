@@ -41,7 +41,7 @@ The `-tags=linux,libsqlite3,sqlite_fts5` flags are **required** for all build an
 ### Lint
 
 ```bash
-golangci-lint run
+mise exec -- golangci-lint run
 ```
 
 Linter config is in `.golangci.yml`. Key enabled linters: `errcheck`, `gosimple`, `govet`, `staticcheck`, `gosec`, `bodyclose`, `sqlclosecheck`.
