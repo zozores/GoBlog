@@ -20,20 +20,20 @@ I'm using mise to manage my Go environment.
 
 ```bash
 # With system SQLite (recommended, faster build)
-go build -tags=linux,libsqlite3,sqlite_fts5 -o GoBlog
+mise exec -- go build -tags=linux,libsqlite3,sqlite_fts5 -o GoBlog
 
 # With embedded SQLite (no system dependency, slower build)
-go build -tags=linux,sqlite_fts5 -o GoBlog
+mise exec -- go build -tags=linux,sqlite_fts5 -o GoBlog
 ```
 
 ### Test
 
 ```bash
 # All tests
-go test -tags=linux,libsqlite3,sqlite_fts5 -timeout 600s ./...
+mise exec -- go test -tags=linux,libsqlite3,sqlite_fts5 -timeout 600s ./...
 
 # Single package/file
-go test -tags=linux,libsqlite3,sqlite_fts5 -run TestName ./...
+mise exec -- go test -tags=linux,libsqlite3,sqlite_fts5 -run TestName ./...
 ```
 
 The `-tags=linux,libsqlite3,sqlite_fts5` flags are **required** for all build and test commands. Without them, compilation will fail.
