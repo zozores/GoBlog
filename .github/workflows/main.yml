@@ -55,7 +55,7 @@ jobs:
         push: true
         target: base
         tags: ghcr.io/zozores/goblog:latest
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64,linux/arm64/v8
         provenance: false
     - name: Build tools image
       uses: docker/build-push-action@v6
@@ -63,7 +63,7 @@ jobs:
         push: true
         target: tools
         tags: ghcr.io/zozores/goblog:tools
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64,linux/arm64/v8
         provenance: false
 
   cleanup:
