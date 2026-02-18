@@ -11,7 +11,7 @@ import (
 
 func (a *goBlog) renderMarkdown(source string, absoluteLinks bool) (rendered []byte, err error) {
 	buffer := bufferpool.Get()
-	err = a.renderMarkdownToWriter(buffer, source, absoluteLinks)
+	err = a.renderMarkdownToWriter(buffer, source, absoluteLinks, "")
 	rendered = buffer.Bytes()
 	bufferpool.Put(buffer)
 	return

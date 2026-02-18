@@ -83,7 +83,7 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	// Announcement
 	if ann := rd.Blog.Announcement; ann != nil && ann.Text != "" {
 		hb.WriteElementOpen("div", "id", "announcement", "data-nosnippet", "")
-		_ = a.renderMarkdownToWriter(hb, ann.Text, false)
+		_ = a.renderMarkdownToWriter(hb, ann.Text, false, rd.Blog.Lang)
 		hb.WriteElementClose("div")
 	}
 	// Header
@@ -283,7 +283,7 @@ func (a *goBlog) renderSearch(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			// Description
 			if sc.Description != "" {
 				titleOrDesc = true
-				_ = a.renderMarkdownToWriter(hb, sc.Description, false)
+				_ = a.renderMarkdownToWriter(hb, sc.Description, false, rd.Blog.Lang)
 			}
 			if titleOrDesc {
 				hb.WriteElementOpen("hr")
@@ -415,7 +415,7 @@ func (a *goBlog) renderIndex(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			// Description
 			if id.description != "" {
 				titleOrDesc = true
-				_ = a.renderMarkdownToWriter(hb, id.description, false)
+				_ = a.renderMarkdownToWriter(hb, id.description, false, rd.Blog.Lang)
 			}
 			if titleOrDesc {
 				hb.WriteElementOpen("hr")
@@ -462,7 +462,7 @@ func (a *goBlog) renderBlogStats(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			}
 			// Description
 			if bs.Description != "" {
-				_ = a.renderMarkdownToWriter(hb, bs.Description, false)
+				_ = a.renderMarkdownToWriter(hb, bs.Description, false, rd.Blog.Lang)
 			}
 			// Table
 			a.renderBlogStatsTable(hb, rd, bsd)
@@ -661,7 +661,7 @@ func (a *goBlog) renderBlogroll(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			// Description
 			if bd.description != "" {
 				hb.WriteElementOpen("p")
-				_ = a.renderMarkdownToWriter(hb, bd.description, false)
+				_ = a.renderMarkdownToWriter(hb, bd.description, false, rd.Blog.Lang)
 				hb.WriteElementClose("p")
 			}
 			// Download button
@@ -748,7 +748,7 @@ func (a *goBlog) renderContact(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			}
 			// Description
 			if cd.description != "" {
-				_ = a.renderMarkdownToWriter(hb, cd.description, false)
+				_ = a.renderMarkdownToWriter(hb, cd.description, false, rd.Blog.Lang)
 			}
 			// Form
 			hb.WriteElementOpen("form", "class", "fw p", "method", "post")
@@ -763,7 +763,7 @@ func (a *goBlog) renderContact(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			hb.WriteElementClose("textarea")
 			// Send
 			if cd.privacy != "" {
-				_ = a.renderMarkdownToWriter(hb, cd.privacy, false)
+				_ = a.renderMarkdownToWriter(hb, cd.privacy, false, rd.Blog.Lang)
 				hb.WriteElementOpen("input", "type", "submit", "value", a.ts.GetTemplateStringVariant(rd.Blog.Lang, "contactagreesend"))
 			} else {
 				hb.WriteElementOpen("input", "type", "submit", "value", a.ts.GetTemplateStringVariant(rd.Blog.Lang, "contactsend"))
@@ -850,7 +850,7 @@ func (a *goBlog) renderTaxonomy(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			}
 			// Description
 			if trd.taxonomy.Description != "" {
-				_ = a.renderMarkdownToWriter(hb, trd.taxonomy.Description, false)
+				_ = a.renderMarkdownToWriter(hb, trd.taxonomy.Description, false, rd.Blog.Lang)
 			}
 			// List
 			for _, valGroup := range trd.valueGroups {
@@ -1414,7 +1414,7 @@ func (a *goBlog) renderEditor(hb *htmlbuilder.HtmlBuilder, rd *renderData) {
 			hb.WriteElementOpen("h2")
 			hb.WriteEscaped(a.ts.GetTemplateStringVariant(rd.Blog.Lang, "create"))
 			hb.WriteElementClose("h2")
-			_ = a.renderMarkdownToWriter(hb, a.editorPostDesc(rd.Blog), false)
+			_ = a.renderMarkdownToWriter(hb, a.editorPostDesc(rd.Blog), false, rd.Blog.Lang)
 			hb.WriteElementOpen("form", "method", "post", "enctype", "multipart/form-data", "class", "fw p")
 			hb.WriteElementOpen("input", "type", "hidden", "name", "editoraction", "value", "createpost")
 			hb.WriteElementOpen(

@@ -75,7 +75,7 @@ func (a *goBlog) postHtmlToWriter(w io.Writer, o *postHtmlOptions) {
 	a.renderPostLikeContext(hb, o.p)
 	// Render markdown
 	hb.WriteElementOpen("div", "class", "e-content")
-	_ = a.renderMarkdownToWriter(hb, o.p.Content, o.absolute)
+	_ = a.renderMarkdownToWriter(hb, o.p.Content, o.absolute, a.getBlogFromPost(o.p).Lang)
 	hb.WriteElementClose("div")
 	// Add bookmark links to the bottom
 	for _, l := range o.p.Parameters[a.cfg.Micropub.BookmarkParam] {

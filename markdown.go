@@ -37,7 +37,7 @@ func (a *goBlog) initMarkdown() {
 				marktag.Mark,
 				emoji.Emoji,
 				highlighting.Highlighting,
-				&alertExtension{},
+				&alertExtension{app: a},
 			),
 		}
 		publicAddress := ""
@@ -67,12 +67,16 @@ func (a *goBlog) initMarkdown() {
 	})
 }
 
-func (a *goBlog) renderMarkdownToWriter(w io.Writer, source string, absoluteLinks bool) (err error) {
+var contextKeyLang = parser.NewContextKey()
+
+func (a *goBlog) renderMarkdownToWriter(w io.Writer, source string, absoluteLinks bool, lang string) (err error) {
 	a.initMarkdown()
+	ctx := parser.NewContext()
+	ctx.Set(contextKeyLang, lang)
 	if absoluteLinks {
-		err = a.absoluteMd.Convert([]byte(source), w)
+		err = a.absoluteMd.Convert([]byte(source), w, parser.WithContext(ctx))
 	} else {
-		err = a.md.Convert([]byte(source), w)
+		err = a.md.Convert([]byte(source), w, parser.WithContext(ctx))
 	}
 	return err
 }
@@ -83,7 +87,7 @@ func (a *goBlog) renderText(s string) (string, error) {
 	}
 	pr, pw := io.Pipe()
 	go func() {
-		_ = pw.CloseWithError(a.renderMarkdownToWriter(pw, s, false))
+		_ = pw.CloseWithError(a.renderMarkdownToWriter(pw, s, false, ""))
 	}()
 	text, err := htmlTextFromReader(pr)
 	_ = pr.CloseWithError(err)
@@ -217,7 +221,9 @@ func (r *customRenderer) extractTextFromChildren(node ast.Node, source []byte) s
 
 // Alerts
 
-type alertExtension struct{}
+type alertExtension struct {
+	app *goBlog
+}
 
 func (e *alertExtension) Extend(m goldmark.Markdown) {
 	m.Parser().AddOptions(
@@ -227,7 +233,7 @@ func (e *alertExtension) Extend(m goldmark.Markdown) {
 	)
 	m.Renderer().AddOptions(
 		renderer.WithNodeRenderers(
-			util.Prioritized(&alertHTMLRenderer{}, 500),
+			util.Prioritized(&alertHTMLRenderer{app: e.app}, 500),
 		),
 	)
 }
@@ -235,6 +241,10 @@ func (e *alertExtension) Extend(m goldmark.Markdown) {
 type alertASTTransformer struct{}
 
 func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, pc parser.Context) {
+	lang, _ := pc.Get(contextKeyLang).(string)
+
+	var alerts []*ast.Blockquote
+
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -255,33 +265,55 @@ func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, 
 		if !strings.HasPrefix(content, "[!") {
 			return ast.WalkContinue, nil
 		}
-		lines := strings.Split(content, "\n")
-		firstLine := lines[0]
+
+		alerts = append(alerts, bq)
+		return ast.WalkSkipChildren, nil
+	})
+
+	for _, bq := range alerts {
+		firstParams := bq.FirstChild().(*ast.Paragraph)
+		content := string(firstParams.Lines().Value(reader.Source()))
+
+		closeBracket := strings.Index(content, "]")
+		if closeBracket == -1 {
+			continue
+		}
+
+		typeStr := strings.TrimSpace(content[2:closeBracket])
 		alertType := ""
 
-		// Check for strict match (allowing trailing whitespace) of the first line
-		trimmedFirstLine := strings.TrimSpace(firstLine)
-		switch {
-		case strings.EqualFold(trimmedFirstLine, "[!NOTE]"):
+		switch strings.ToUpper(typeStr) {
+		case "NOTE":
 			alertType = "note"
-		case strings.EqualFold(trimmedFirstLine, "[!TIP]"):
+		case "TIP":
 			alertType = "tip"
-		case strings.EqualFold(trimmedFirstLine, "[!IMPORTANT]"):
+		case "IMPORTANT":
 			alertType = "important"
-		case strings.EqualFold(trimmedFirstLine, "[!WARNING]"):
+		case "WARNING":
 			alertType = "warning"
-		case strings.EqualFold(trimmedFirstLine, "[!CAUTION]"):
+		case "CAUTION":
 			alertType = "caution"
 		}
 
 		if alertType == "" {
-			return ast.WalkContinue, nil
+			continue
+		}
+
+		// Check that the rest of the line is empty/whitespace by checking bounds
+		// content usually includes the newline at end of the line segment
+		rest := content[closeBracket+1:]
+		if idx := strings.IndexAny(rest, "\r\n"); idx != -1 {
+			rest = rest[:idx]
+		}
+		if strings.TrimSpace(rest) != "" {
+			continue
 		}
 
 		// Create Alert node
 		alert := &Alert{
 			BaseBlock: ast.BaseBlock{},
 			AlertType: alertType,
+			Lang:      lang,
 		}
 
 		// Logic to remove the [!TYPE] line
@@ -290,9 +322,9 @@ func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, 
 		cutoff := firstLineSeg.Stop
 
 		// Remove text nodes belonging to the first line
-		curr := firstParams.FirstChild()
-		for curr != nil {
-			next := curr.NextSibling()
+		var next ast.Node
+		for curr := firstParams.FirstChild(); curr != nil; curr = next {
+			next = curr.NextSibling()
 
 			if tNode, ok := curr.(*ast.Text); ok {
 				nodeSeg := tNode.Segment
@@ -317,7 +349,6 @@ func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, 
 				// We stop.
 				break
 			}
-			curr = next
 		}
 
 		if firstParams.ChildCount() == 0 {
@@ -327,11 +358,11 @@ func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, 
 		// Now move all children
 		parent := bq.Parent()
 		if parent == nil {
-			return ast.WalkContinue, nil // Should not happen
+			continue
 		}
 
 		// Move children
-		curr = bq.FirstChild()
+		curr := bq.FirstChild()
 		for curr != nil {
 			next := curr.NextSibling()
 			bq.RemoveChild(bq, curr)
@@ -340,14 +371,13 @@ func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, 
 		}
 
 		parent.ReplaceChild(parent, bq, alert)
-
-		return ast.WalkSkipChildren, nil
-	})
+	}
 }
 
 type Alert struct {
 	ast.BaseBlock
 	AlertType string
+	Lang      string
 }
 
 func (n *Alert) Dump(source []byte, level int) {
@@ -360,7 +390,9 @@ func (n *Alert) Kind() ast.NodeKind {
 	return KindAlert
 }
 
-type alertHTMLRenderer struct{}
+type alertHTMLRenderer struct {
+	app *goBlog
+}
 
 func (r *alertHTMLRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(KindAlert, r.renderAlert)
@@ -373,19 +405,11 @@ func (r *alertHTMLRenderer) renderAlert(w util.BufWriter, _ []byte, node ast.Nod
 		w.WriteString(n.AlertType)
 		w.WriteString("\">")
 		w.WriteString("<p class=\"markdown-alert-title\">")
-		// Capitalize
-		title := n.AlertType
-		switch title {
-		case "note":
-			title = "Note"
-		case "tip":
-			title = "Tip"
-		case "important":
-			title = "Important"
-		case "warning":
-			title = "Warning"
-		case "caution":
-			title = "Caution"
+		// Localize title
+		title := r.app.ts.GetTemplateStringVariant(n.Lang, "alert"+n.AlertType)
+		if title == "" {
+			// Fallback
+			title = strings.Title(n.AlertType)
 		}
 		w.WriteString(title)
 		w.WriteString("</p>")
