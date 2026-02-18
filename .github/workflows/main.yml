@@ -30,7 +30,7 @@ jobs:
           go test -timeout 600s -cover ./...
 
   build:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -47,29 +47,23 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    - name: Login to Gitea container registry
-      uses: docker/login-action@v3
-      with:
-        registry: git.jlel.se
-        username: nologin
-        password: ${{ secrets.GITEA_TOKEN }}
     - name: Build base image
       uses: docker/build-push-action@v6
       with:
         push: true
         target: base
-        tags: ghcr.io/jlelse/goblog:latest,git.jlel.se/jlelse/goblog:latest
+        tags: ghcr.io/zozores/goblog:latest
         provenance: false
     - name: Build tools image
       uses: docker/build-push-action@v6
       with:
         push: true
         target: tools
-        tags: ghcr.io/jlelse/goblog:tools,git.jlel.se/jlelse/goblog:tools
+        tags: ghcr.io/zozores/goblog:tools
         provenance: false
 
   cleanup:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:

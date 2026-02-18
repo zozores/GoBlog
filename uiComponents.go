@@ -157,7 +157,9 @@ func (a *goBlog) renderPostMeta(hb *htmlbuilder.HtmlBuilder, p *post, b *configB
 		// Section
 		if p.Section != "" {
 			if section := b.Sections[p.Section]; section != nil {
-				hb.WriteUnescaped(" in ") // TODO: Replace with a proper translation
+				hb.WriteUnescaped(" ")
+				hb.WriteEscaped(a.ts.GetTemplateStringVariant(b.Lang, "in"))
+				hb.WriteUnescaped(" ")
 				hb.WriteElementOpen("a", "href", b.getRelativePath(section.Name))
 				hb.WriteEscaped(a.renderMdTitle(section.Title))
 				hb.WriteElementClose("a")
@@ -1056,16 +1058,41 @@ func (a *goBlog) renderFooter(origHb *htmlbuilder.HtmlBuilder, rd *renderData) {
 	}
 	// Copyright
 	hb.WriteElementOpen("p", "translate", "no")
-	hb.WriteUnescaped("&copy; ")
-	hb.WriteEscaped(time.Now().Format("2006"))
+	hb.WriteUnescaped("© ")
+	hb.WriteUnescaped(time.Now().Format("2006"))
 	hb.WriteUnescaped(" ")
-	if user := a.cfg.User; user != nil && user.Name != "" {
-		hb.WriteEscaped(user.Name)
+	if rd.User.Name != "" {
+		hb.WriteEscaped(a.renderMdTitle(rd.User.Name))
+		hb.WriteUnescaped(" - ")
 	} else {
 		hb.WriteEscaped(a.renderMdTitle(rd.Blog.Title))
+		hb.WriteUnescaped(" - ")
 	}
+	hb.WriteElementOpen("a", "rel", "license", "href", rd.Blog.LicenseUrl)
+	hb.WriteUnescaped(rd.Blog.LicenseName)
+	hb.WriteElementClose("a")
 	hb.WriteElementClose("p")
 	// Tor
 	a.renderTorNotice(hb, rd)
 	hb.WriteElementClose("footer")
+}
+
+func (a *goBlog) renderSocialIcons(hb *htmlbuilder.HtmlBuilder, b *configBlog) {
+	if b == nil || len(b.Social) == 0 {
+		return
+	}
+	hb.WriteElementOpen("div", "class", "social-icons")
+	for _, item := range b.Social {
+		if item.Link == "" || item.Name == "" {
+			continue
+		}
+		icon, ok := simpleIcons[strings.ToLower(item.Name)]
+		if !ok {
+			continue
+		}
+		hb.WriteElementOpen("a", "href", item.Link, "class", "social-icon", "title", item.Name, "target", "_blank", "rel", "me nofollow noopener noreferrer")
+		hb.WriteUnescaped(icon)
+		hb.WriteElementClose("a")
+	}
+	hb.WriteElementClose("div")
 }

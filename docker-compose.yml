@@ -1,0 +1,10 @@
+services:
+  goblog:
+    build: .
+    container_name: goblog
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+    restart: unless-stopped

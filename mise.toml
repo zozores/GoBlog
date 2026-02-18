@@ -1,0 +1,5 @@
+[tools]
+go = "latest"
+golangci-lint = "latest"
+python = "latest"
+uv = "latest"
