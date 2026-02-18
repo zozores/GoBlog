@@ -29,56 +29,50 @@ jobs:
         run: |
           go test -timeout 600s -cover ./...
 
-  # build:
-  #   if: github.ref == 'refs/heads/master'
-  #   needs: test
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
-  #   steps:
-  #   - name: Checkout
-  #     uses: actions/checkout@v6
-  #   - name: Set up Docker Buildx
-  #     uses: docker/setup-buildx-action@v3
-  #   - name: Login to GitHub container registry
-  #     uses: docker/login-action@v3
-  #     with:
-  #       registry: ghcr.io
-  #       username: ${{ github.actor }}
-  #       password: ${{ secrets.GITHUB_TOKEN }}
-  #   - name: Login to Gitea container registry
-  #     uses: docker/login-action@v3
-  #     with:
-  #       registry: git.jlel.se
-  #       username: nologin
-  #       password: ${{ secrets.GITEA_TOKEN }}
-  #   - name: Build base image
-  #     uses: docker/build-push-action@v6
-  #     with:
-  #       push: true
-  #       target: base
-  #       tags: ghcr.io/jlelse/goblog:latest,git.jlel.se/jlelse/goblog:latest
-  #       provenance: false
-  #   - name: Build tools image
-  #     uses: docker/build-push-action@v6
-  #     with:
-  #       push: true
-  #       target: tools
-  #       tags: ghcr.io/jlelse/goblog:tools,git.jlel.se/jlelse/goblog:tools
-  #       provenance: false
+  build:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Login to GitHub container registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build base image
+      uses: docker/build-push-action@v6
+      with:
+        push: true
+        target: base
+        tags: ghcr.io/zozores/goblog:latest
+        provenance: false
+    - name: Build tools image
+      uses: docker/build-push-action@v6
+      with:
+        push: true
+        target: tools
+        tags: ghcr.io/zozores/goblog:tools
+        provenance: false
 
-  # cleanup:
-  #   if: github.ref == 'refs/heads/master'
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     packages: write
-  #   steps:
-  #     - uses: actions/delete-package-versions@v5
-  #       with: 
-  #         package-name: ${{ github.event.repository.name }}
-  #         owner: ${{ github.repository_owner }}
-  #         package-type: 'container'
-  #         min-versions-to-keep: 0
-  #         delete-only-untagged-versions: 'true'
+  cleanup:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/delete-package-versions@v5
+        with: 
+          package-name: ${{ github.event.repository.name }}
+          owner: ${{ github.repository_owner }}
+          package-type: 'container'
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: 'true'
