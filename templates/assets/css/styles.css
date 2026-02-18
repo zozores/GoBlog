@@ -455,6 +455,123 @@ button.share-modal-close,
   width: 100%;
 }
 
+
+/* Markdown Alerts */
+.markdown-alert {
+  padding: 10px;
+  margin-bottom: 16px;
+  border-left-width: 5px;
+  border-left-style: solid;
+}
+
+.markdown-alert .markdown-alert-title {
+  font-weight: bold;
+  margin-bottom: 5px;
+  margin-top: 0;
+}
+
+.markdown-alert p {
+  margin: 0;
+}
+
+.markdown-alert p+p {
+  margin-top: 10px;
+}
+
+/* Light mode colors (default) */
+.markdown-alert-note {
+  border-left-color: #0969da;
+  background-color: rgba(9, 105, 218, 0.1);
+}
+
+.markdown-alert-note .markdown-alert-title {
+  color: #0969da;
+}
+
+.markdown-alert-tip {
+  border-left-color: #1a7f37;
+  background-color: rgba(26, 127, 55, 0.1);
+}
+
+.markdown-alert-tip .markdown-alert-title {
+  color: #1a7f37;
+}
+
+.markdown-alert-important {
+  border-left-color: #8250df;
+  background-color: rgba(130, 80, 223, 0.1);
+}
+
+.markdown-alert-important .markdown-alert-title {
+  color: #8250df;
+}
+
+.markdown-alert-warning {
+  border-left-color: #9a6700;
+  background-color: rgba(154, 103, 0, 0.1);
+}
+
+.markdown-alert-warning .markdown-alert-title {
+  color: #9a6700;
+}
+
+.markdown-alert-caution {
+  border-left-color: #cf222e;
+  background-color: rgba(207, 34, 46, 0.1);
+}
+
+.markdown-alert-caution .markdown-alert-title {
+  color: #cf222e;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .markdown-alert-note {
+    border-left-color: #2f81f7;
+    background-color: rgba(56, 139, 253, 0.1);
+  }
+
+  .markdown-alert-note .markdown-alert-title {
+    color: #2f81f7;
+  }
+
+  .markdown-alert-tip {
+    border-left-color: #3fb950;
+    background-color: rgba(46, 160, 67, 0.1);
+  }
+
+  .markdown-alert-tip .markdown-alert-title {
+    color: #3fb950;
+  }
+
+  .markdown-alert-important {
+    border-left-color: #a371f7;
+    background-color: rgba(163, 113, 247, 0.1);
+  }
+
+  .markdown-alert-important .markdown-alert-title {
+    color: #a371f7;
+  }
+
+  .markdown-alert-warning {
+    border-left-color: #d29922;
+    background-color: rgba(210, 153, 34, 0.1);
+  }
+
+  .markdown-alert-warning .markdown-alert-title {
+    color: #d29922;
+  }
+
+  .markdown-alert-caution {
+    border-left-color: #f85149;
+    background-color: rgba(248, 81, 73, 0.1);
+  }
+
+  .markdown-alert-caution .markdown-alert-title {
+    color: #f85149;
+  }
+}
+
 @media print {
   html {
     --background: #fff;

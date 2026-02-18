@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"strings"
 
 	marktag "git.jlel.se/jlelse/goldmark-mark"
 	"github.com/yuin/goldmark"
@@ -11,6 +12,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 	"go.goblog.app/app/pkgs/builderpool"
 	"go.goblog.app/app/pkgs/highlighting"
@@ -35,6 +37,7 @@ func (a *goBlog) initMarkdown() {
 				marktag.Mark,
 				emoji.Emoji,
 				highlighting.Highlighting,
+				&alertExtension{},
 			),
 		}
 		publicAddress := ""
@@ -210,4 +213,184 @@ func (r *customRenderer) extractTextFromChildren(node ast.Node, source []byte) s
 		}
 	}
 	return b.String()
+}
+
+// Alerts
+
+type alertExtension struct{}
+
+func (e *alertExtension) Extend(m goldmark.Markdown) {
+	m.Parser().AddOptions(
+		parser.WithASTTransformers(
+			util.Prioritized(&alertASTTransformer{}, 500),
+		),
+	)
+	m.Renderer().AddOptions(
+		renderer.WithNodeRenderers(
+			util.Prioritized(&alertHTMLRenderer{}, 500),
+		),
+	)
+}
+
+type alertASTTransformer struct{}
+
+func (a *alertASTTransformer) Transform(node *ast.Document, reader text.Reader, pc parser.Context) {
+	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		bq, ok := n.(*ast.Blockquote)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+		if bq.ChildCount() == 0 {
+			return ast.WalkContinue, nil
+		}
+		firstParams, ok := bq.FirstChild().(*ast.Paragraph)
+		if !ok {
+			return ast.WalkContinue, nil
+		}
+		content := string(firstParams.Lines().Value(reader.Source()))
+
+		if !strings.HasPrefix(content, "[!") {
+			return ast.WalkContinue, nil
+		}
+		lines := strings.Split(content, "\n")
+		firstLine := lines[0]
+		alertType := ""
+
+		// Check for strict match (allowing trailing whitespace) of the first line
+		trimmedFirstLine := strings.TrimSpace(firstLine)
+		switch {
+		case strings.EqualFold(trimmedFirstLine, "[!NOTE]"):
+			alertType = "note"
+		case strings.EqualFold(trimmedFirstLine, "[!TIP]"):
+			alertType = "tip"
+		case strings.EqualFold(trimmedFirstLine, "[!IMPORTANT]"):
+			alertType = "important"
+		case strings.EqualFold(trimmedFirstLine, "[!WARNING]"):
+			alertType = "warning"
+		case strings.EqualFold(trimmedFirstLine, "[!CAUTION]"):
+			alertType = "caution"
+		}
+
+		if alertType == "" {
+			return ast.WalkContinue, nil
+		}
+
+		// Create Alert node
+		alert := &Alert{
+			BaseBlock: ast.BaseBlock{},
+			AlertType: alertType,
+		}
+
+		// Logic to remove the [!TYPE] line
+		// We use the segment of the first line to determine the cutoff point in source
+		firstLineSeg := firstParams.Lines().At(0)
+		cutoff := firstLineSeg.Stop
+
+		// Remove text nodes belonging to the first line
+		curr := firstParams.FirstChild()
+		for curr != nil {
+			next := curr.NextSibling()
+
+			if tNode, ok := curr.(*ast.Text); ok {
+				nodeSeg := tNode.Segment
+				// Check for overlap with first line
+				if nodeSeg.Stop <= cutoff {
+					// Fully inside first line -> Remove
+					firstParams.RemoveChild(firstParams, curr)
+				} else if nodeSeg.Start < cutoff {
+					// Overlaps -> Trim
+					tNode.Segment = text.NewSegment(cutoff, nodeSeg.Stop)
+					// We trimmed the overlap, so the rest belongs to next line.
+					// Stop processing.
+					break
+				} else {
+					// Strictly after -> Stop
+					break
+				}
+			} else {
+				// Non-text node found.
+				// Since we enforced strict syntax, the first line should only contain text.
+				// If we encounter a non-text node, it must be on the next line or invalid.
+				// We stop.
+				break
+			}
+			curr = next
+		}
+
+		if firstParams.ChildCount() == 0 {
+			bq.RemoveChild(bq, firstParams)
+		}
+
+		// Now move all children
+		parent := bq.Parent()
+		if parent == nil {
+			return ast.WalkContinue, nil // Should not happen
+		}
+
+		// Move children
+		curr = bq.FirstChild()
+		for curr != nil {
+			next := curr.NextSibling()
+			bq.RemoveChild(bq, curr)
+			alert.AppendChild(alert, curr)
+			curr = next
+		}
+
+		parent.ReplaceChild(parent, bq, alert)
+
+		return ast.WalkSkipChildren, nil
+	})
+}
+
+type Alert struct {
+	ast.BaseBlock
+	AlertType string
+}
+
+func (n *Alert) Dump(source []byte, level int) {
+	ast.DumpHelper(n, source, level, nil, nil)
+}
+
+var KindAlert = ast.NewNodeKind("Alert")
+
+func (n *Alert) Kind() ast.NodeKind {
+	return KindAlert
+}
+
+type alertHTMLRenderer struct{}
+
+func (r *alertHTMLRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	reg.Register(KindAlert, r.renderAlert)
+}
+
+func (r *alertHTMLRenderer) renderAlert(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*Alert)
+	if entering {
+		w.WriteString("<div class=\"markdown-alert markdown-alert-")
+		w.WriteString(n.AlertType)
+		w.WriteString("\">")
+		w.WriteString("<p class=\"markdown-alert-title\">")
+		// Capitalize
+		title := n.AlertType
+		switch title {
+		case "note":
+			title = "Note"
+		case "tip":
+			title = "Tip"
+		case "important":
+			title = "Important"
+		case "warning":
+			title = "Warning"
+		case "caution":
+			title = "Caution"
+		}
+		w.WriteString(title)
+		w.WriteString("</p>")
+	} else {
+		w.WriteString("</div>")
+	}
+	return ast.WalkContinue, nil
 }
