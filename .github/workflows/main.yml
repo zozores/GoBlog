@@ -55,7 +55,7 @@ jobs:
         push: true
         target: base
         tags: ghcr.io/zozores/goblog:latest
-        platforms: linux/amd64,linux/aarch64
+        platforms: linux/amd64,linux/arm64
         provenance: false
     - name: Build tools image
       uses: docker/build-push-action@v6
@@ -63,20 +63,5 @@ jobs:
         push: true
         target: tools
         tags: ghcr.io/zozores/goblog:tools
-        platforms: linux/amd64,linux/aarch64
+        platforms: linux/amd64,linux/arm64
         provenance: false
-
-  cleanup:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: actions/delete-package-versions@v5
-        with: 
-          package-name: ${{ github.event.repository.name }}
-          owner: ${{ github.repository_owner }}
-          package-type: 'container'
-          min-versions-to-keep: 0
-          delete-only-untagged-versions: 'true'
