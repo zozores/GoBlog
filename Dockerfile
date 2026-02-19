@@ -28,9 +28,7 @@ FROM alpine:3.23 AS base
 WORKDIR /app
 VOLUME /app/config
 VOLUME /app/data
-EXPOSE 80
-EXPOSE 443
-EXPOSE 8080
+
 CMD ["GoBlog"]
 HEALTHCHECK --interval=1m --timeout=10s CMD GoBlog healthcheck
 ENV GOMEMLIMIT=100MiB
