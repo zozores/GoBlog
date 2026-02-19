@@ -30,7 +30,7 @@ VOLUME /app/config
 VOLUME /app/data
 
 CMD ["GoBlog"]
-HEALTHCHECK --interval=1m --timeout=10s CMD GoBlog healthcheck
+
 ENV GOMEMLIMIT=100MiB
 RUN apk add --no-cache tzdata tor
 RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main sqlite-dev
