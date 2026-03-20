@@ -461,18 +461,42 @@ func (a *goBlog) renderPostHeadMeta(hb *htmlbuilder.HtmlBuilder, p *post) {
 	if p == nil {
 		return
 	}
-	if summary := a.postSummary(p); summary != "" {
+	// General description
+	summary := a.postSummary(p)
+	if summary != "" {
 		hb.WriteElementOpen("meta", "name", "description", "content", summary)
 	}
+	// Structured data
 	if published := toLocalTime(p.Published); !published.IsZero() {
 		hb.WriteElementOpen("meta", "itemprop", "datePublished", "content", published.Format(time.RFC3339))
 	}
 	if updated := toLocalTime(p.Updated); !updated.IsZero() {
 		hb.WriteElementOpen("meta", "itemprop", "dateModified", "content", updated.Format(time.RFC3339))
 	}
-	for _, img := range a.photoLinks(p) {
-		hb.WriteElementOpen("meta", "itemprop", "image", "content", img)
+	photos := a.photoLinks(p)
+	for _, img := range photos {
+		hb.WriteElementOpen("meta", "itemprop", "image", "content", a.getFullAddress(img))
 	}
+	// Social
+	hb.WriteElementOpen("meta", "property", "og:type", "content", "article")
+	title := cmp.Or(p.RenderedTitle, a.fallbackTitle(p))
+	hb.WriteElementOpen("meta", "property", "og:title", "content", title)
+	hb.WriteElementOpen("meta", "name", "twitter:title", "content", title)
+	if summary != "" {
+		hb.WriteElementOpen("meta", "property", "og:description", "content", summary)
+		hb.WriteElementOpen("meta", "name", "twitter:description", "content", summary)
+	}
+	if len(photos) > 0 {
+		img := a.getFullAddress(photos[0])
+		hb.WriteElementOpen("meta", "property", "og:image", "content", img)
+		hb.WriteElementOpen("meta", "name", "twitter:image", "content", img)
+		hb.WriteElementOpen("meta", "name", "twitter:card", "content", "summary_large_image")
+	} else if a.hasProfileImage() {
+		img := a.getFullAddress(a.profileImagePath(profileImageFormatJPEG, 0, 0))
+		hb.WriteElementOpen("meta", "property", "og:image", "content", img)
+		hb.WriteElementOpen("meta", "name", "twitter:card", "content", "summary")
+	}
+	// ActivityPub creator
 	if a.apEnabled() {
 		if userHandle, ok := a.apUserHandle[p.Blog]; ok {
 			hb.WriteElementOpen("meta", "name", "fediverse:creator", "property", "fediverse:creator", "content", userHandle)

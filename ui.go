@@ -30,6 +30,22 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	hb.WriteElementOpen("html", "lang", rd.Blog.Lang)
 	hb.WriteElementOpen("meta", "charset", "utf-8")
 	hb.WriteElementOpen("meta", "name", "viewport", "content", "width=device-width,initial-scale=1")
+	// Social
+	hb.WriteElementOpen("meta", "property", "og:site_name", "content", a.renderMdTitle(rd.Blog.Title))
+	if rd.Canonical != "" {
+		hb.WriteElementOpen("meta", "property", "og:url", "content", rd.Canonical)
+	}
+	if _, isPost := rd.Data.(*post); !isPost {
+		hb.WriteElementOpen("meta", "property", "og:type", "content", "website")
+		hb.WriteElementOpen("meta", "property", "og:title", "content", a.renderMdTitle(rd.Blog.Title))
+		if rd.Blog.Description != "" {
+			hb.WriteElementOpen("meta", "property", "og:description", "content", rd.Blog.Description)
+		}
+		if a.hasProfileImage() {
+			hb.WriteElementOpen("meta", "property", "og:image", "content", a.getFullAddress(a.profileImagePath(profileImageFormatJPEG, 0, 0)))
+		}
+		hb.WriteElementOpen("meta", "name", "twitter:card", "content", "summary")
+	}
 	// Fonts
 	hb.WriteElementOpen("link", "rel", "preconnect", "href", "https://fonts.googleapis.com")
 	hb.WriteElementOpen("link", "rel", "preconnect", "href", "https://fonts.gstatic.com", "crossorigin", "")
