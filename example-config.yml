@@ -246,7 +246,7 @@ blogs:
     blogroll:
       enabled: true # Enable
       path: /blogroll # (Optional) Set a custom path (relative to blog path)
-      title: Blogroll # Title
+      title: Blogroll
       description: "I follow these blog:" # Description
       opml: https://example.com/blogroll.opml # Required, URL to the OPML file
       authHeader: X-Auth # Optional, header to use for OPML authentication

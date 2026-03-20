@@ -43,6 +43,7 @@ func (a *goBlog) serveSettings(w http.ResponseWriter, r *http.Request) {
 			blog:                  blog,
 			blogTitle:             bc.Title,
 			blogDescription:       bc.Description,
+			blogTagline:           bc.Tagline,
 			sections:              sections,
 			defaultSection:        bc.DefaultSection,
 			hideOldContentWarning: bc.hideOldContentWarning,
@@ -290,6 +291,7 @@ func (a *goBlog) settingsUpdateBlog(w http.ResponseWriter, r *http.Request) {
 	// Read values
 	blogTitle := r.FormValue(blogTitleSetting)
 	blogDescription := r.FormValue(blogDescriptionSetting)
+	blogTagline := r.FormValue(blogTaglineSetting)
 	// Title is required
 	if blogTitle == "" {
 		a.serveError(w, r, "Blog title must not be empty", http.StatusBadRequest)
@@ -307,8 +309,15 @@ func (a *goBlog) settingsUpdateBlog(w http.ResponseWriter, r *http.Request) {
 		a.serveError(w, r, "Failed to update blog description in database", http.StatusInternalServerError)
 		return
 	}
+	// Update tagline
+	err = a.setBlogTagline(blog, blogTagline)
+	if err != nil {
+		a.serveError(w, r, "Failed to update blog tagline in database", http.StatusInternalServerError)
+		return
+	}
 	bc.Title = blogTitle
 	bc.Description = blogDescription
+	bc.Tagline = blogTagline
 	a.purgeCache()
 	http.Redirect(w, r, bc.getRelativePath(settingsPath), http.StatusFound)
 }

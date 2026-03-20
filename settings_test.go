@@ -53,11 +53,13 @@ func Test_settingsUpdateBlog(t *testing.T) {
 	// Set initial values
 	bc.Title = "Initial Title"
 	bc.Description = "Initial Description"
+	bc.Tagline = "Initial Tagline"
 	_ = app.setBlogTitle(blog, bc.Title)
 	_ = app.setBlogDescription(blog, bc.Description)
+	_ = app.setBlogTagline(blog, bc.Tagline)
 
 	// Simulate request to update blog settings
-	req := httptest.NewRequest("POST", "/settings/blog", strings.NewReader("blogtitle=New+Title&blogdescription=New+Description"))
+	req := httptest.NewRequest("POST", "/settings/blog", strings.NewReader("blogtitle=New+Title&blogdescription=New+Description&blogtagline=New+Tagline"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rr := httptest.NewRecorder()
 
@@ -70,6 +72,7 @@ func Test_settingsUpdateBlog(t *testing.T) {
 	// Should have updated the settings
 	require.Equal(t, "New Title", bc.Title)
 	require.Equal(t, "New Description", bc.Description)
+	require.Equal(t, "New Tagline", bc.Tagline)
 
 	// Verify database values
 	dbTitle, err := app.getBlogTitle(blog)
@@ -79,6 +82,10 @@ func Test_settingsUpdateBlog(t *testing.T) {
 	dbDescription, err := app.getBlogDescription(blog)
 	require.NoError(t, err)
 	require.Equal(t, "New Description", dbDescription)
+
+	dbTagline, err := app.getBlogTagline(blog)
+	require.NoError(t, err)
+	require.Equal(t, "New Tagline", dbTagline)
 }
 
 func Test_settingsUpdateBlog_EmptyTitle(t *testing.T) {
@@ -129,4 +136,5 @@ func Test_settingsUpdateBlog_EmptyDescription(t *testing.T) {
 	// Should have updated the settings
 	require.Equal(t, "New Title", bc.Title)
 	require.Equal(t, "", bc.Description)
+	require.Equal(t, "", bc.Tagline)
 }

@@ -27,6 +27,7 @@ const (
 	apMovedToSetting             = "apmovedto" // ActivityPub movedTo target for account migration
 	blogTitleSetting             = "blogtitle"
 	blogDescriptionSetting       = "blogdescription"
+	blogTaglineSetting           = "blogtagline"
 )
 
 func (a *goBlog) getSettingValue(name string) (string, error) {
@@ -179,6 +180,16 @@ func (a *goBlog) getBlogDescription(blog string) (string, error) {
 // setBlogDescription saves the description for a blog to the database
 func (a *goBlog) setBlogDescription(blog, description string) error {
 	return a.saveSettingValue(settingNameWithBlog(blog, blogDescriptionSetting), description)
+}
+
+// getBlogTagline returns the tagline for a blog from the database
+func (a *goBlog) getBlogTagline(blog string) (string, error) {
+	return a.getSettingValue(settingNameWithBlog(blog, blogTaglineSetting))
+}
+
+// setBlogTagline saves the tagline for a blog to the database
+func (a *goBlog) setBlogTagline(blog, tagline string) error {
+	return a.saveSettingValue(settingNameWithBlog(blog, blogTaglineSetting), tagline)
 }
 
 // hasDeprecatedBlogTitleDescriptionConfig checks if deprecated blog title/description config options are still present
