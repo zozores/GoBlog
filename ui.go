@@ -125,6 +125,12 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 		hb.WriteElementClose("i")
 		hb.WriteElementClose("p")
 	}
+	// Blog tagline
+	if rd.Blog.Tagline != "" {
+		hb.WriteElementOpen("p")
+		hb.WriteEscaped(rd.Blog.Tagline)
+		hb.WriteElementClose("p")
+	}
 	// Social icons
 	a.renderSocialIcons(hb, rd.Blog)
 	// Main menu
