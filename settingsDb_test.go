@@ -139,3 +139,35 @@ func Test_hasDeprecatedBlogTitleDescriptionConfig(t *testing.T) {
 	app.cfg.Blogs[blog].configDescription = ""
 	require.False(t, app.hasDeprecatedBlogTitleDescriptionConfig())
 }
+
+func Test_settingsDb_blogTagline(t *testing.T) {
+	app := &goBlog{
+		cfg: createDefaultTestConfig(t),
+	}
+	_ = app.initConfig(false)
+
+	blog := app.cfg.DefaultBlog
+
+	// Initially empty (unless migrated, but createDefaultTestConfig has no tagline)
+	tagline, err := app.getBlogTagline(blog)
+	require.NoError(t, err)
+	require.Empty(t, tagline)
+
+	// Set tagline
+	err = app.setBlogTagline(blog, "Test Tagline")
+	require.NoError(t, err)
+
+	// Read back
+	tagline, err = app.getBlogTagline(blog)
+	require.NoError(t, err)
+	require.Equal(t, "Test Tagline", tagline)
+
+	// Update tagline
+	err = app.setBlogTagline(blog, "Updated Tagline")
+	require.NoError(t, err)
+
+	// Read back updated value
+	tagline, err = app.getBlogTagline(blog)
+	require.NoError(t, err)
+	require.Equal(t, "Updated Tagline", tagline)
+}

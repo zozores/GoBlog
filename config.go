@@ -85,6 +85,7 @@ type configBlog struct {
 	LicenseName    string                    `mapstructure:"licenseName"`
 	LicenseUrl     string                    `mapstructure:"licenseUrl"`
 	Description    string                    `mapstructure:"description"`
+	Tagline        string                    `mapstructure:"tagline"`
 	Pagination     int                       `mapstructure:"pagination"`
 	DefaultSection string                    `mapstructure:"defaultsection"`
 	Sections       map[string]*configSection `mapstructure:"sections"` // Moved to web ui, but keep it loading the db state to this struct and the initial migration from config to db.
@@ -618,6 +619,20 @@ func (a *goBlog) initConfig(logging bool) error {
 		} else {
 			// Set value from database
 			bc.Description = blogDescription
+		}
+		// Blog tagline
+		if blogTagline, err := a.getBlogTagline(blog); err != nil {
+			return err
+		} else if blogTagline == "" {
+			// Migrate to database if configured in config
+			if bc.Tagline != "" {
+				if err = a.setBlogTagline(blog, bc.Tagline); err != nil {
+					return err
+				}
+			}
+		} else {
+			// Set value from database
+			bc.Tagline = blogTagline
 		}
 		// Load other settings from database
 		configs := []*bool{

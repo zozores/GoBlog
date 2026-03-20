@@ -1562,6 +1562,7 @@ type settingsRenderData struct {
 	blog                  string
 	blogTitle             string
 	blogDescription       string
+	blogTagline           string
 	sections              []*configSection
 	defaultSection        string
 	hideOldContentWarning bool
