@@ -315,3 +315,38 @@ func Test_taglineRendering(t *testing.T) {
 		assert.NotContains(t, res, "<b>Escaped</b>")
 	})
 }
+
+func Test_renderUmami(t *testing.T) {
+	app := &goBlog{
+		cfg: createDefaultTestConfig(t),
+	}
+
+	_ = app.initConfig(false)
+
+	t.Run("Umami disabled", func(t *testing.T) {
+		app.cfg.Blogs["default"].Umami = &configUmami{Enabled: false}
+		buf := &bytes.Buffer{}
+		hb := htmlbuilder.NewHtmlBuilder(buf)
+		app.renderUmami(hb, app.cfg.Blogs["default"])
+		assert.Empty(t, buf.String())
+	})
+
+	t.Run("Umami enabled", func(t *testing.T) {
+		app.cfg.Blogs["default"].Umami = &configUmami{
+			Enabled:   true,
+			ScriptURL: "https://umami.example.com/script.js",
+			WebsiteID: "12345",
+			Domains:   "example.com",
+			HostURL:   "https://umami.example.com",
+		}
+		buf := &bytes.Buffer{}
+		hb := htmlbuilder.NewHtmlBuilder(buf)
+		app.renderUmami(hb, app.cfg.Blogs["default"])
+		res := buf.String()
+		assert.Contains(t, res, "src=\"https://umami.example.com/script.js\"")
+		assert.Contains(t, res, "data-website-id=\"12345\"")
+		assert.Contains(t, res, "data-domains=\"example.com\"")
+		assert.Contains(t, res, "data-host-url=\"https://umami.example.com\"")
+		assert.Contains(t, res, "defer=\"\"")
+	})
+}

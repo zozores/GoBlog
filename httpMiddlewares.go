@@ -46,6 +46,7 @@ func (a *goBlog) securityHeaders(next http.Handler) http.Handler {
 	allowedDomains = append(allowedDomains, a.cfg.Server.altHosts...)
 	allowedDomains = append(allowedDomains, a.cfg.Server.CSPDomains...)
 	allowedDomains = append(allowedDomains, "fonts.googleapis.com", "fonts.gstatic.com")
+	allowedDomains = append(allowedDomains, a.cfg.getAllUmamiDomains()...)
 	if mp := a.cfg.Micropub.MediaStorage; mp != nil && mp.MediaURL != "" {
 		if u, err := url.Parse(mp.MediaURL); err == nil {
 			allowedDomains = append(allowedDomains, u.Hostname())
