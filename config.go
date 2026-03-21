@@ -104,6 +104,7 @@ type configBlog struct {
 	Contact        *configContact            `mapstructure:"contact"`
 	Announcement   *configAnnouncement       `mapstructure:"announcement"`
 	Atproto        *configAtproto            `mapstructure:"atproto"`
+	Umami          *configUmami              `mapstructure:"umami"`
 	Social         []*configSocialItem       `mapstructure:"social"`
 	// Configs read from database
 	hideOldContentWarning bool
@@ -382,6 +383,14 @@ type configAtproto struct {
 type configSocialItem struct {
 	Name string `mapstructure:"name"` // github, linkedin, x, mastodon, bluesky, instagram, facebook, email
 	Link string `mapstructure:"link"`
+}
+
+type configUmami struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	ScriptURL string `mapstructure:"scriptUrl"`
+	WebsiteID string `mapstructure:"websiteId"`
+	Domains   string `mapstructure:"domains"`
+	HostURL   string `mapstructure:"hostUrl"`
 }
 
 func (a *goBlog) loadConfigFile(file string) error {
@@ -759,4 +768,21 @@ func (a *goBlog) isLocalURL(urlStr string) bool {
 		}
 	}
 	return false
+}
+
+func (c *config) getAllUmamiDomains() []string {
+	var domains []string
+	for _, b := range c.Blogs {
+		if b.Umami != nil && b.Umami.Enabled {
+			if u, err := url.Parse(b.Umami.ScriptURL); err == nil {
+				domains = append(domains, u.Hostname())
+			}
+			if b.Umami.HostURL != "" {
+				if u, err := url.Parse(b.Umami.HostURL); err == nil {
+					domains = append(domains, u.Hostname())
+				}
+			}
+		}
+	}
+	return lo.Uniq(lo.Filter(domains, func(v string, _ int) bool { return v != "" }))
 }

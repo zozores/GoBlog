@@ -62,6 +62,7 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 	} else {
 		a.renderTitleTag(hb, rd.Blog, "")
 	}
+	a.renderUmami(hb, rd.Blog)
 	renderedBlogTitle := a.renderMdTitle(rd.Blog.Title)
 	// Feeds
 	hb.WriteElementOpen("link", "rel", "alternate", "type", "application/rss+xml", "title", fmt.Sprintf("RSS (%s)", renderedBlogTitle), "href", a.getFullAddress(rd.Blog.Path+".rss"))
@@ -191,6 +192,20 @@ func (a *goBlog) renderBase(hb *htmlbuilder.HtmlBuilder, rd *renderData, title, 
 		hb.WriteElementClose("script")
 	}
 	hb.WriteElementClose("html")
+}
+
+func (a *goBlog) renderUmami(hb *htmlbuilder.HtmlBuilder, bc *configBlog) {
+	if u := bc.Umami; u != nil && u.Enabled && u.ScriptURL != "" && u.WebsiteID != "" {
+		args := []any{"defer", "", "src", u.ScriptURL, "data-website-id", u.WebsiteID}
+		if u.Domains != "" {
+			args = append(args, "data-domains", u.Domains)
+		}
+		if u.HostURL != "" {
+			args = append(args, "data-host-url", u.HostURL)
+		}
+		hb.WriteElementOpen("script", args...)
+		hb.WriteElementClose("script")
+	}
 }
 
 type errorRenderData struct {

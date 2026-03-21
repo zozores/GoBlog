@@ -299,4 +299,10 @@ blogs:
       emailSubject: "New contact message" # (Optional) Email subject
     # Announcement
     announcement:
-      text: This is an **announcement**! # Can be markdown with links etc.
+      text: This is an **announcement**! # Can be markdown with links etc.    # Umami Analytics
+    umami:
+      enabled: true
+      scriptUrl: https://cloud.umami.is/script.js
+      websiteId: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      # domains: "example.com" # Optional, restrict tracking to these domains
+      # hostUrl: https://cloud.umami.is # Optional, custom host URL
