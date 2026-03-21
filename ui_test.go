@@ -245,3 +245,73 @@ func Test_renderSettings(t *testing.T) {
 	assert.Equal(t, 0, doc.Find("input[name=\"addliketitle\"][checked]").Length())
 	assert.Equal(t, 1, doc.Find("input[name=\"addlikecontext\"][checked]").Length())
 }
+
+func Test_taglineRendering(t *testing.T) {
+	app := &goBlog{
+		cfg: createDefaultTestConfig(t),
+	}
+
+	_ = app.initConfig(false)
+	_ = app.initTemplateStrings()
+
+	t.Run("With tagline", func(t *testing.T) {
+		app.cfg.Blogs["default"].Tagline = "This is a test tagline"
+
+		buf := &bytes.Buffer{}
+		hb := htmlbuilder.NewHtmlBuilder(buf)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		rd := &renderData{
+			Blog: app.cfg.Blogs["default"],
+		}
+		app.checkRenderData(req, rd)
+
+		app.renderBase(hb, rd, nil, nil)
+
+		doc, err := goquery.NewDocumentFromReader(buf)
+		require.NoError(t, err)
+
+		assert.Equal(t, "This is a test tagline", doc.Find("header p").Last().Text())
+	})
+
+	t.Run("Without tagline", func(t *testing.T) {
+		app.cfg.Blogs["default"].Tagline = ""
+
+		buf := &bytes.Buffer{}
+		hb := htmlbuilder.NewHtmlBuilder(buf)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		rd := &renderData{
+			Blog: app.cfg.Blogs["default"],
+		}
+		app.checkRenderData(req, rd)
+
+		app.renderBase(hb, rd, nil, nil)
+
+		doc, err := goquery.NewDocumentFromReader(buf)
+		require.NoError(t, err)
+
+		doc.Find("header p").Each(func(i int, s *goquery.Selection) {
+			assert.NotEqual(t, "This is a test tagline", s.Text())
+		})
+	})
+
+	t.Run("Escaped tagline", func(t *testing.T) {
+		app.cfg.Blogs["default"].Tagline = "<b>Escaped</b>"
+
+		buf := &bytes.Buffer{}
+		hb := htmlbuilder.NewHtmlBuilder(buf)
+
+		req := httptest.NewRequest("GET", "/", nil)
+		rd := &renderData{
+			Blog: app.cfg.Blogs["default"],
+		}
+		app.checkRenderData(req, rd)
+
+		app.renderBase(hb, rd, nil, nil)
+
+		res := buf.String()
+		assert.Contains(t, res, "&lt;b&gt;Escaped&lt;/b&gt;")
+		assert.NotContains(t, res, "<b>Escaped</b>")
+	})
+}
